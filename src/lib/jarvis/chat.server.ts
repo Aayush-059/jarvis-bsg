@@ -84,7 +84,7 @@ function systemPrompt(level: PermissionLevel, memories: { id: string; content: s
 }
 
 export async function handleChat(request: Request) {
-  const apiKey = process.env.LOVABLE_API_KEY;
+  const apiKey = process.env['LOVABLE_API_KEY'];
   if (!apiKey) return Response.json({ error: "AI is not configured." }, { status: 500 });
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
@@ -94,7 +94,6 @@ export async function handleChat(request: Request) {
 
   // Server-side enforcement: the model is only ever shown tools its level allows.
   const allowed = toolsForLevel(level as PermissionLevel);
-  const tools = Object.fromEntries(Object.entries(allTools).filter(([k]) => allowed.includes(k as never)));
 
   const runIdFetch = createLovableAiGatewayRunIdFetch(getLovableAiGatewayRunId(request));
   const provider = createOpenAI({
@@ -108,7 +107,8 @@ export async function handleChat(request: Request) {
     model: provider.responses(MODEL),
     instructions: systemPrompt(level as PermissionLevel, memories, summary),
     messages: await convertToModelMessages(messages),
-    tools,
+    tools: allTools,
+    activeTools: allowed,
     stopWhen: stepCountIs(MAX_SERVER_STEPS),
     abortSignal: request.signal,
     providerOptions: {
@@ -140,7 +140,7 @@ export async function handleChat(request: Request) {
 
 /** One-shot summarizer used to compress long histories. */
 export async function handleSummarize(request: Request) {
-  const apiKey = process.env.LOVABLE_API_KEY;
+  const apiKey = process.env['LOVABLE_API_KEY'];
   if (!apiKey) return Response.json({ error: "AI is not configured." }, { status: 500 });
   const body = z.object({ text: z.string().max(60000), previous: z.string().max(4000).optional() }).safeParse(
     await request.json().catch(() => null),

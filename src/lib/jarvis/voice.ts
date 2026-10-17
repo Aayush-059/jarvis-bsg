@@ -34,7 +34,7 @@ export function useVoice(onFinal: (text: string) => void) {
     rec.continuous = true;
     rec.onresult = (e) => {
       let text = "";
-      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+      for (let i = 0; i < e.results.length; i++) text += e.results[i]?.[0]?.transcript ?? "";
       finalRef.current = text;
       setInterim(text);
     };
