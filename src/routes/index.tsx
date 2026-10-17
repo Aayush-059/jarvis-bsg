@@ -168,7 +168,7 @@ function Jarvis() {
     const msgs = chat.messages;
     if (summarizing.current || msgs.length < 24) return;
     let cut = 16;
-    while (cut < msgs.length && msgs[cut].role !== "user") cut++;
+    while (cut < msgs.length && msgs[cut]?.role !== "user") cut++;
     if (cut >= msgs.length - 2) return;
     summarizing.current = true;
     try {
