@@ -36,7 +36,8 @@ export const Route = createFileRoute("/")({
 });
 
 const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message"];
-type Pending = { toolCallId: string; tool: ToolName; input: Record<string, string> };
+type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string };
+type Pending = { toolCallId: string; tool: ToolName; input: ToolInput };
 type Phase = "IDLE" | "LISTENING" | "PROCESSING" | "AWAITING APPROVAL" | "SPEAKING";
 
 function textOf(m: UIMessage) {
@@ -73,7 +74,7 @@ function Jarvis() {
     onToolCall: ({ toolCall }) => {
       const tool = toolCall.toolName as ToolName;
       if (!CLIENT_TOOLS.includes(tool)) return; // server tools already executed
-      handleToolCall({ toolCallId: toolCall.toolCallId, tool, input: toolCall.input as Record<string, string> });
+      handleToolCall({ toolCallId: toolCall.toolCallId, tool, input: toolCall.input as ToolInput });
     },
     onFinish: ({ message }) => {
       if (!mutedRef.current && message.role === "assistant") voice.speak(textOf(message));
@@ -109,17 +110,17 @@ function Jarvis() {
     const s = storeRef.current;
     switch (p.tool) {
       case "save_memory": {
-        const m = s.addMemory(p.input.content, p.input.category ?? "fact");
+        const m = s.addMemory(p.input.content ?? "", p.input.category ?? "fact");
         return output(p, { ok: true, id: m.id }, "executed", `Saved: ${m.content}`);
       }
       case "delete_memory": {
         const exists = s.memories.some((m) => m.id === p.input.id);
         if (!exists) return output(p, { ok: false, reason: "No memory with that id." }, "failed", "Memory not found");
-        s.deleteMemory(p.input.id);
+        s.deleteMemory(p.input.id ?? "");
         return output(p, { ok: true }, "executed", `Deleted ${p.input.id}`);
       }
       case "open_website": {
-        const v = validateWebsite(p.input.target);
+        const v = validateWebsite(p.input.target ?? "");
         if (!v.ok) return output(p, { ok: false, reason: v.reason }, "rejected", v.reason);
         const w = window.open(v.url, "_blank", "noopener");
         // window.open returns null with noopener; we can only verify popups weren't blocked when it returns a window.
