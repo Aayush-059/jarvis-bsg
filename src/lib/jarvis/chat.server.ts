@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai";
+import { convertToModelMessages, stepCountIs, streamText, tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
 
 import {
@@ -107,7 +107,7 @@ export async function handleChat(request: Request) {
     model: provider.responses(MODEL),
     instructions: systemPrompt(level as PermissionLevel, memories, summary),
     messages: await convertToModelMessages(messages),
-    tools: allTools,
+    tools: allTools as unknown as ToolSet,
     activeTools: allowed,
     stopWhen: stepCountIs(MAX_SERVER_STEPS),
     abortSignal: request.signal,
