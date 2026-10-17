@@ -1,0 +1,139 @@
+// JARVIS safety policy — pure, shared by server and browser so both sides
+// enforce the same rules (defense in depth). No side effects in this file.
+
+export type PermissionLevel = 1 | 2 | 3 | 4 | 5;
+
+export const PERMISSION_LEVELS: Record<PermissionLevel, { name: string; description: string }> = {
+  1: { name: "Answer only", description: "Talks. Takes no actions." },
+  2: { name: "Compute", description: "Can calculate and check the time." },
+  3: { name: "Remember", description: "Can also save memories." },
+  4: { name: "Act with approval", description: "Can open sites, draft messages, delete memories — every action asks first." },
+  5: { name: "Bounded autonomy", description: "Opens approved sites without asking. Deletions and messages still ask." },
+};
+
+export type ToolName =
+  | "calculate"
+  | "get_current_time"
+  | "save_memory"
+  | "delete_memory"
+  | "open_website"
+  | "draft_message";
+
+/** Minimum permission level required to even offer a tool to the model. */
+export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
+  calculate: 2,
+  get_current_time: 2,
+  save_memory: 3,
+  delete_memory: 4,
+  open_website: 4,
+  draft_message: 4,
+};
+
+/** Tools that are always confirmed by the user, at any level. */
+const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message"];
+
+export function toolsForLevel(level: PermissionLevel): ToolName[] {
+  return (Object.keys(TOOL_MIN_LEVEL) as ToolName[]).filter((t) => TOOL_MIN_LEVEL[t] <= level);
+}
+
+export function isToolAllowed(tool: string, level: PermissionLevel): tool is ToolName {
+  return tool in TOOL_MIN_LEVEL && TOOL_MIN_LEVEL[tool as ToolName] <= level;
+}
+
+export function needsConfirmation(tool: ToolName, level: PermissionLevel): boolean {
+  if (ALWAYS_CONFIRM.includes(tool)) return true;
+  if (tool === "open_website") return level < 5;
+  return false;
+}
+
+/** Approved websites. Only these hosts (and their subdomains) may be opened. */
+export const APPROVED_SITES = [
+  { id: "google", label: "Google", url: "https://www.google.com" },
+  { id: "youtube", label: "YouTube", url: "https://www.youtube.com" },
+  { id: "gmail", label: "Gmail", url: "https://mail.google.com" },
+  { id: "calendar", label: "Google Calendar", url: "https://calendar.google.com" },
+  { id: "github", label: "GitHub", url: "https://github.com" },
+  { id: "wikipedia", label: "Wikipedia", url: "https://en.wikipedia.org" },
+  { id: "maps", label: "Google Maps", url: "https://maps.google.com" },
+] as const;
+
+const APPROVED_HOSTS = ["google.com", "youtube.com", "github.com", "wikipedia.org"];
+
+/** Returns a normalized https URL if approved, otherwise a rejection reason. */
+export function validateWebsite(raw: string): { ok: true; url: string } | { ok: false; reason: string } {
+  const byId = APPROVED_SITES.find((s) => s.id === raw.trim().toLowerCase());
+  if (byId) return { ok: true, url: byId.url };
+  let u: URL;
+  try {
+    u = new URL(raw.includes("://") ? raw : `https://${raw}`);
+  } catch {
+    return { ok: false, reason: "Not a valid web address." };
+  }
+  if (u.protocol !== "https:") return { ok: false, reason: "Only secure https sites are allowed." };
+  if (u.username || u.password) return { ok: false, reason: "Addresses with credentials are blocked." };
+  const host = u.hostname.toLowerCase();
+  const approved = APPROVED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  if (!approved) return { ok: false, reason: `${host} is not on the approved list.` };
+  return { ok: true, url: u.toString() };
+}
+
+/**
+ * Safe calculator: a tiny recursive-descent parser. Never uses eval/Function,
+ * so the model cannot smuggle code through "math".
+ */
+export function safeCalculate(expr: string): { ok: true; value: number } | { ok: false; reason: string } {
+  if (expr.length > 200) return { ok: false, reason: "Expression too long." };
+  if (!/^[\d\s+\-*/().%^]+$/.test(expr)) return { ok: false, reason: "Only numbers and + - * / % ^ ( ) are allowed." };
+  let i = 0;
+  const s = expr.replace(/\s+/g, "");
+  const peek = () => s[i];
+  const num = (): number => {
+    if (peek() === "(") {
+      i++;
+      const v = add();
+      if (peek() !== ")") throw new Error("Missing )");
+      i++;
+      return v;
+    }
+    if (peek() === "-") { i++; return -num(); }
+    const m = /^\d+(\.\d+)?/.exec(s.slice(i));
+    if (!m) throw new Error("Expected a number");
+    i += m[0].length;
+    return parseFloat(m[0]);
+  };
+  const pow = (): number => {
+    const b = num();
+    if (peek() === "^") { i++; return Math.pow(b, pow()); }
+    return b;
+  };
+  const mul = (): number => {
+    let v = pow();
+    while (peek() === "*" || peek() === "/" || peek() === "%") {
+      const op = s[i++];
+      const r = pow();
+      v = op === "*" ? v * r : op === "/" ? v / r : v % r;
+    }
+    return v;
+  };
+  const add = (): number => {
+    let v = mul();
+    while (peek() === "+" || peek() === "-") {
+      const op = s[i++];
+      const r = mul();
+      v = op === "+" ? v + r : v - r;
+    }
+    return v;
+  };
+  try {
+    const v = add();
+    if (i !== s.length) return { ok: false, reason: "Unexpected characters." };
+    if (!Number.isFinite(v)) return { ok: false, reason: "Result is not a finite number." };
+    return { ok: true, value: v };
+  } catch (e) {
+    return { ok: false, reason: (e as Error).message };
+  }
+}
+
+/** Max model steps per request and max client tool round-trips per user turn. */
+export const MAX_SERVER_STEPS = 6;
+export const MAX_TOOL_ROUNDTRIPS = 6;
