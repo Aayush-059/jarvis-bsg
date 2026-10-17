@@ -8,3 +8,7 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Architecture
+- Safety rules (permission levels, allowlists, safe calculator) live in `src/lib/jarvis/policy.ts` and are enforced on both server and browser — never relax one side only; covered by `src/test/policy.test.ts`.
+- The AI only *requests* actions: action tools have no server execute and run in the browser after policy check + user approval, then are logged to the audit log.
