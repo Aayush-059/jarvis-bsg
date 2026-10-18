@@ -17,7 +17,14 @@ export type ToolName =
   | "save_memory"
   | "delete_memory"
   | "open_website"
-  | "draft_message";
+  | "draft_message"
+  | "launch_app"
+  | "list_files"
+  | "search_files"
+  | "read_file"
+  | "write_file"
+  | "restore_file"
+  | "take_screenshot";
 
 /** Minimum permission level required to even offer a tool to the model. */
 export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
@@ -27,10 +34,23 @@ export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
   delete_memory: 4,
   open_website: 4,
   draft_message: 4,
+  list_files: 3,
+  search_files: 3,
+  read_file: 3,
+  launch_app: 4,
+  write_file: 4,
+  restore_file: 4,
+  take_screenshot: 4,
 };
 
+/** Tools executed by the Windows helper on the user's PC. */
+export const PC_TOOLS: ToolName[] = ["launch_app", "list_files", "search_files", "read_file", "write_file", "restore_file", "take_screenshot"];
+
+/** Apps the helper may launch. Must match APPS in public/jarvis-helper/jarvis_helper.py. */
+export const APPROVED_APPS = ["calculator", "notepad", "paint", "explorer"] as const;
+
 /** Tools that are always confirmed by the user, at any level. */
-const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message"];
+const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "write_file", "restore_file", "take_screenshot"];
 
 export function toolsForLevel(level: PermissionLevel): ToolName[] {
   return (Object.keys(TOOL_MIN_LEVEL) as ToolName[]).filter((t) => TOOL_MIN_LEVEL[t] <= level);
@@ -42,7 +62,7 @@ export function isToolAllowed(tool: string, level: PermissionLevel): tool is Too
 
 export function needsConfirmation(tool: ToolName, level: PermissionLevel): boolean {
   if (ALWAYS_CONFIRM.includes(tool)) return true;
-  if (tool === "open_website") return level < 5;
+  if (tool === "open_website" || tool === "launch_app") return level < 5;
   return false;
 }
 
@@ -137,3 +157,10 @@ export function safeCalculate(expr: string): { ok: true; value: number } | { ok:
 /** Max model steps per request and max client tool round-trips per user turn. */
 export const MAX_SERVER_STEPS = 6;
 export const MAX_TOOL_ROUNDTRIPS = 6;
+
+/** Browser-side mirror of the helper's path rule (the helper re-checks). */
+export function isSafeWorkspacePath(rel: string): boolean {
+  const r = rel.trim().replace(/\\/g, "/");
+  if (r.length > 260 || r.startsWith("/") || r.startsWith("~") || r.includes(":")) return false;
+  return !r.split("/").includes("..");
+}
