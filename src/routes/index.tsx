@@ -1,7 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls, type UIMessage } from "ai";
-import { Mic, MicOff, OctagonX, Send, Trash2, Volume2, VolumeX, Check, X } from "lucide-react";
+import { Monitor, Mic, MicOff, OctagonX, Send, Trash2, Volume2, VolumeX, Check, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -10,8 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  APPROVED_APPS,
   APPROVED_SITES,
   MAX_TOOL_ROUNDTRIPS,
+  PC_TOOLS,
+  isSafeWorkspacePath,
   PERMISSION_LEVELS,
   isToolAllowed,
   needsConfirmation,
@@ -20,6 +23,8 @@ import {
   type ToolName,
 } from "@/lib/jarvis/policy";
 import { useJarvisStore } from "@/lib/jarvis/store";
+import { callHelper, useHelper } from "@/lib/jarvis/helper-client";
+import { Input } from "@/components/ui/input";
 import { useVoice } from "@/lib/jarvis/voice";
 import { cn } from "@/lib/utils";
 
@@ -35,9 +40,9 @@ export const Route = createFileRoute("/")({
   component: Jarvis,
 });
 
-const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message"];
-type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string };
-type Pending = { toolCallId: string; tool: ToolName; input: ToolInput };
+const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message", ...PC_TOOLS];
+type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; app?: string; path?: string; query?: string; reason?: string };
+type Pending = { toolCallId: string; tool: ToolName; input: ToolInput; diff?: string };
 type Phase = "IDLE" | "LISTENING" | "PROCESSING" | "AWAITING APPROVAL" | "SPEAKING";
 
 function textOf(m: UIMessage) {
@@ -51,6 +56,9 @@ function Jarvis() {
   const [input, setInput] = useState("");
   const [muted, setMuted] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
+  const [shots, setShots] = useState<string[]>([]);
+  const helper = useHelper();
+  const [pairCode, setPairCode] = useState("");
   const roundTrips = useRef(0);
   const halted = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -102,12 +110,46 @@ function Jarvis() {
       const v = validateWebsite(p.input.target ?? "");
       if (!v.ok) return output(p, { ok: false, reason: v.reason }, "rejected", v.reason);
     }
-    if (needsConfirmation(p.tool, level)) return setPending((q) => [...q, p]);
+    if (p.input.path !== undefined && !isSafeWorkspacePath(p.input.path)) {
+      return output(p, { ok: false, reason: "That path is outside the workspace." }, "rejected", `Blocked path ${p.input.path}`);
+    }
+    if (needsConfirmation(p.tool, level)) {
+      if (p.tool === "write_file") {
+        // Show a real diff from the PC before asking for approval.
+        callHelper("/files/preview", { path: p.input.path, content: p.input.content }).then((r) => {
+          if (!r.ok) return output(p, r, "failed", r.reason ?? "Preview failed");
+          setPending((q) => [...q, { ...p, diff: String(r["diff"] ?? "") }]);
+        });
+        return;
+      }
+      return setPending((q) => [...q, p]);
+    }
     execute(p);
+  }
+
+  async function runPc(p: Pending) {
+    const routes: Partial<Record<ToolName, [string, Record<string, unknown>]>> = {
+      launch_app: ["/apps/launch", { app: p.input.app }],
+      list_files: ["/files/list", { path: p.input.path ?? "" }],
+      search_files: ["/files/search", { query: p.input.query }],
+      read_file: ["/files/read", { path: p.input.path }],
+      write_file: ["/files/write", { path: p.input.path, content: p.input.content }],
+      restore_file: ["/files/restore", { path: p.input.path }],
+      take_screenshot: ["/screen/capture", {}],
+    };
+    const [path, body] = routes[p.tool]!;
+    const r = await callHelper(path, body, p.tool === "launch_app" ? 20000 : 15000);
+    if (halted.current) return;
+    if (p.tool === "take_screenshot" && r.ok) {
+      setShots((x) => [`data:image/png;base64,${r["png_base64"]}`, ...x].slice(0, 3));
+      return output(p, { ok: true, width: r["width"], height: r["height"], note: "Screenshot shown to the user." }, "executed", "Screenshot captured");
+    }
+    output(p, r, r.ok ? "executed" : "failed", r.ok ? `${p.tool} ${p.input.app ?? p.input.path ?? p.input.query ?? ""}` : (r.reason ?? "Failed"));
   }
 
   function execute(p: Pending) {
     const s = storeRef.current;
+    if (PC_TOOLS.includes(p.tool)) return void runPc(p);
     switch (p.tool) {
       case "save_memory": {
         const m = s.addMemory(p.input.content ?? "", p.input.category ?? "fact");
@@ -201,6 +243,11 @@ function Jarvis() {
             <h1 className="text-3xl font-bold tracking-[0.3em] text-primary">J.A.R.V.I.S.</h1>
             <p className="hud-label">Status · {phase}</p>
           </div>
+          <span className="hud-label flex items-center gap-1.5" title="Windows helper">
+            <Monitor className="h-4 w-4" />
+            <span className={cn("h-2 w-2 rounded-full", helper.status === "online" ? "bg-success" : helper.status === "offline" ? "bg-destructive" : "bg-muted-foreground")} />
+            PC {helper.status}
+          </span>
           <Button variant="outline" size="icon" aria-label={muted ? "Unmute voice" : "Mute voice"} onClick={() => { setMuted(!muted); voice.silence(); }}>
             {muted ? <VolumeX /> : <Volume2 />}
           </Button>
@@ -238,10 +285,13 @@ function Jarvis() {
             </div>
           ))}
           {status === "submitted" && <p className="hud-label animate-pulse">Processing…</p>}
+          {shots.map((src, i) => (
+            <img key={i} src={src} alt="Screenshot of your PC" className="max-h-72 rounded-md border border-border" />
+          ))}
           {pending.map((p) => (
             <div key={p.toolCallId} className="rounded-lg border border-accent bg-card p-4">
               <p className="hud-label text-accent">Approval required · {p.tool.replace("_", " ")}</p>
-              <pre className="mt-2 whitespace-pre-wrap font-mono text-sm">{p.tool === "draft_message" ? `${p.input.channel} → ${p.input.to}\nSubject: ${p.input.subject}\n\n${p.input.body}` : JSON.stringify(p.input, null, 2)}</pre>
+              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-sm">{p.diff !== undefined ? <DiffView diff={p.diff} /> : p.tool === "draft_message" ? `${p.input.channel} → ${p.input.to}\nSubject: ${p.input.subject}\n\n${p.input.body}` : JSON.stringify(p.input, null, 2)}</pre>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => decide(p, true)}><Check /> Approve</Button>
                 <Button size="sm" variant="outline" onClick={() => decide(p, false)}><X /> Decline</Button>
@@ -283,11 +333,39 @@ function Jarvis() {
       {/* Right: control panel */}
       <aside className="hud-panel flex min-h-0 w-full flex-col p-4 lg:w-96">
         <Tabs defaultValue="permissions" className="flex min-h-0 flex-1 flex-col">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="permissions">Access</TabsTrigger>
             <TabsTrigger value="memory">Memory</TabsTrigger>
             <TabsTrigger value="audit">Log</TabsTrigger>
+            <TabsTrigger value="pc">PC</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="pc" className="space-y-3 overflow-y-auto text-sm">
+            <p className="hud-label">Windows helper · {helper.status}</p>
+            {helper.status === "online" && (
+              <p className="rounded-md border border-success/40 p-2">Connected. Workspace: <span className="font-mono text-xs">{String(helper.info?.["workspace"] ?? "")}</span></p>
+            )}
+            <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+              <li>Install Python 3.10+ on your PC.</li>
+              <li>Download the helper files below into one folder.</li>
+              <li>In that folder run <span className="font-mono text-foreground">python jarvis_helper.py</span> (not as admin).</li>
+              <li>Paste the pairing code it shows here.</li>
+            </ol>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="outline"><a href="/jarvis-helper/jarvis_helper.py" download>jarvis_helper.py</a></Button>
+              <Button asChild size="sm" variant="outline"><a href="/jarvis-helper/README.txt" download>README.txt</a></Button>
+              <Button asChild size="sm" variant="ghost"><a href="/jarvis-helper/test_jarvis_helper.py" download>tests</a></Button>
+            </div>
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (pairCode.trim()) { helper.pair(pairCode); setPairCode(""); store.log({ tool: "PAIR_HELPER", input: {}, status: "executed", detail: "Pairing code saved" }); } }}>
+              <Input type="password" placeholder="Pairing code" value={pairCode} onChange={(e) => setPairCode(e.target.value)} />
+              <Button type="submit" size="sm">Connect</Button>
+            </form>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={helper.check}>Re-check</Button>
+              {helper.token && <Button size="sm" variant="ghost" onClick={helper.unpair}>Forget pairing</Button>}
+            </div>
+            <p className="text-xs text-muted-foreground">Allowed apps: {APPROVED_APPS.join(", ")}. Files only inside the workspace folder. Writes show a diff first and keep a backup you can restore.</p>
+          </TabsContent>
 
           <TabsContent value="permissions" className="space-y-2 overflow-y-auto">
             {([1, 2, 3, 4, 5] as PermissionLevel[]).map((l) => (
@@ -347,6 +425,16 @@ function Jarvis() {
         </Tabs>
       </aside>
     </main>
+  );
+}
+
+function DiffView({ diff }: { diff: string }) {
+  return (
+    <>
+      {diff.split("\n").map((l, i) => (
+        <span key={i} className={cn("block", l.startsWith("+") && !l.startsWith("+++") ? "text-success" : l.startsWith("-") && !l.startsWith("---") ? "text-destructive" : "text-muted-foreground")}>{l || " "}</span>
+      ))}
+    </>
   );
 }
 
