@@ -39,3 +39,9 @@ describe("PC helper rules", () => {
     expect(isSafeWorkspacePath("notes/todo.txt")).toBe(true);
   });
 });
+
+describe("Google rules", () => {
+  it("creating calendar events always asks", () => expect(needsConfirmation("create_event", 5)).toBe(true));
+  it("sending messages (drafts) always asks", () => expect(needsConfirmation("draft_message", 5)).toBe(true));
+  it("reading email needs level 3", () => expect(isToolAllowed("search_email", 2)).toBe(false));
+});

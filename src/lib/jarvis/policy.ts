@@ -24,7 +24,11 @@ export type ToolName =
   | "read_file"
   | "write_file"
   | "restore_file"
-  | "take_screenshot";
+  | "take_screenshot"
+  | "list_events"
+  | "create_event"
+  | "search_email"
+  | "read_email";
 
 /** Minimum permission level required to even offer a tool to the model. */
 export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
@@ -41,6 +45,10 @@ export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
   write_file: 4,
   restore_file: 4,
   take_screenshot: 4,
+  list_events: 3,
+  search_email: 3,
+  read_email: 3,
+  create_event: 4,
 };
 
 /** Tools executed by the Windows helper on the user's PC. */
@@ -50,7 +58,7 @@ export const PC_TOOLS: ToolName[] = ["launch_app", "list_files", "search_files",
 export const APPROVED_APPS = ["calculator", "notepad", "paint", "explorer"] as const;
 
 /** Tools that are always confirmed by the user, at any level. */
-const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "write_file", "restore_file", "take_screenshot"];
+const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "create_event", "write_file", "restore_file", "take_screenshot"];
 
 export function toolsForLevel(level: PermissionLevel): ToolName[] {
   return (Object.keys(TOOL_MIN_LEVEL) as ToolName[]).filter((t) => TOOL_MIN_LEVEL[t] <= level);

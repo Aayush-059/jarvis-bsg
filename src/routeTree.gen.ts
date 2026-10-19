@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiGoogleRouteImport } from './routes/api/google'
 import { Route as ApiSummarizeRouteImport } from './routes/api/summarize'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiGoogleRoute = ApiGoogleRouteImport.update({
+  id: '/api/google',
+  path: '/api/google',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSummarizeRoute = ApiSummarizeRouteImport.update({
   id: '/api/summarize',
   path: '/api/summarize',
@@ -32,30 +38,34 @@ const ApiSummarizeRoute = ApiSummarizeRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/google': typeof ApiGoogleRoute
   '/api/summarize': typeof ApiSummarizeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/google': typeof ApiGoogleRoute
   '/api/summarize': typeof ApiSummarizeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/google': typeof ApiGoogleRoute
   '/api/summarize': typeof ApiSummarizeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/chat' | '/api/summarize'
+  fullPaths: '/' | '/api/chat' | '/api/google' | '/api/summarize'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/chat' | '/api/summarize'
-  id: '__root__' | '/' | '/api/chat' | '/api/summarize'
+  to: '/' | '/api/chat' | '/api/google' | '/api/summarize'
+  id: '__root__' | '/' | '/api/chat' | '/api/google' | '/api/summarize'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiGoogleRoute: typeof ApiGoogleRoute
   ApiSummarizeRoute: typeof ApiSummarizeRoute
 }
 
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/google': {
+      id: '/api/google'
+      path: '/api/google'
+      fullPath: '/api/google'
+      preLoaderRoute: typeof ApiGoogleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/summarize': {
       id: '/api/summarize'
       path: '/api/summarize'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiGoogleRoute: ApiGoogleRoute,
   ApiSummarizeRoute: ApiSummarizeRoute,
 }
 export const routeTree = rootRouteImport

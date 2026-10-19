@@ -41,7 +41,7 @@ export const Route = createFileRoute("/")({
 });
 
 const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message", ...PC_TOOLS];
-type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; app?: string; path?: string; query?: string; reason?: string };
+type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; summary?: string; start?: string; end?: string; description?: string; timeZone?: string; app?: string; path?: string; query?: string; reason?: string };
 type Pending = { toolCallId: string; tool: ToolName; input: ToolInput; diff?: string };
 type Phase = "IDLE" | "LISTENING" | "PROCESSING" | "AWAITING APPROVAL" | "SPEAKING";
 
@@ -59,6 +59,9 @@ function Jarvis() {
   const [shots, setShots] = useState<string[]>([]);
   const helper = useHelper();
   const [pairCode, setPairCode] = useState("");
+  const [locked, setLocked] = useState(false);
+  const [passInput, setPassInput] = useState("");
+  useEffect(() => { if (!localStorage.getItem("jarvis.passcode")) setLocked(true); }, []);
   const roundTrips = useRef(0);
   const halted = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -67,6 +70,7 @@ function Jarvis() {
   const chat = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
+      headers: () => ({ "X-Jarvis-Passcode": localStorage.getItem("jarvis.passcode") ?? "" }),
       body: () => ({
         level: storeRef.current.level,
         memories: storeRef.current.memories.map((m) => ({ id: m.id, content: m.content })),
@@ -88,7 +92,12 @@ function Jarvis() {
       if (!mutedRef.current && message.role === "assistant") voice.speak(textOf(message));
       maybeSummarize();
     },
-    onError: (e) => toast.error(e.message || "Connection to JARVIS failed."),
+    onError: (e) => {
+      if (/passcode/i.test(e.message)) {
+        setLocked(true);
+        toast.error(/Set a JARVIS passcode/.test(e.message) ? "No passcode is set up yet." : "Wrong passcode. Enter it in the Access tab.");
+      } else toast.error(e.message || "Connection to JARVIS failed.");
+    },
   });
   const { messages, sendMessage, status, stop, addToolOutput, setMessages } = chat;
   const mutedRef = useRef(muted);
@@ -127,6 +136,28 @@ function Jarvis() {
     execute(p);
   }
 
+  async function runGoogle(p: Pending) {
+    const body =
+      p.tool === "create_event"
+        ? { action: "create_event", summary: p.input.summary, start: p.input.start, end: p.input.end, description: p.input.description, timeZone: p.input.timeZone }
+        : { action: "send_email", to: p.input.to, subject: p.input.subject, body: p.input.body };
+    let r: { ok: boolean; reason?: string; [k: string]: unknown };
+    try {
+      const res = await fetch("/api/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Jarvis-Passcode": localStorage.getItem("jarvis.passcode") ?? "" },
+        body: JSON.stringify(body),
+      });
+      r = await res.json().catch(() => ({ ok: false, reason: `Server replied ${res.status}` }));
+      if (res.status === 401 || res.status === 503) r = { ok: false, reason: "Passcode missing or wrong." };
+    } catch {
+      r = { ok: false, reason: "Network error — nothing was sent." };
+    }
+    if (halted.current) return;
+    const what = p.tool === "create_event" ? `Event "${p.input.summary}"` : `Email to ${p.input.to}`;
+    output(p, r, r.ok ? "executed" : "failed", r.ok ? `${what} — verified` : `${what}: ${r.reason ?? "failed"}`);
+  }
+
   async function runPc(p: Pending) {
     const routes: Partial<Record<ToolName, [string, Record<string, unknown>]>> = {
       launch_app: ["/apps/launch", { app: p.input.app }],
@@ -150,6 +181,7 @@ function Jarvis() {
   function execute(p: Pending) {
     const s = storeRef.current;
     if (PC_TOOLS.includes(p.tool)) return void runPc(p);
+    if (p.tool === "create_event" || (p.tool === "draft_message" && p.input.channel === "email")) return void runGoogle(p);
     switch (p.tool) {
       case "save_memory": {
         const m = s.addMemory(p.input.content ?? "", p.input.category ?? "fact");
@@ -215,7 +247,7 @@ function Jarvis() {
     summarizing.current = true;
     try {
       const text = msgs.slice(0, cut).map((m) => `${m.role}: ${textOf(m)}`).join("\n");
-      const r = await fetch("/api/summarize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, previous: storeRef.current.summary }) });
+      const r = await fetch("/api/summarize", { method: "POST", body: JSON.stringify({ text, previous: storeRef.current.summary }), headers: { "Content-Type": "application/json", "X-Jarvis-Passcode": localStorage.getItem("jarvis.passcode") ?? "" } });
       const j = await r.json();
       if (r.ok && j.summary) {
         storeRef.current.setSummary(j.summary);
@@ -257,6 +289,16 @@ function Jarvis() {
         </header>
 
         <div ref={scrollRef} className="hud-panel min-h-[50vh] flex-1 space-y-4 overflow-y-auto p-5">
+          {locked && (
+            <form
+              className="mx-auto max-w-sm space-y-2 rounded-lg border border-accent p-4"
+              onSubmit={(e) => { e.preventDefault(); if (passInput.trim()) { localStorage.setItem("jarvis.passcode", passInput.trim()); setPassInput(""); setLocked(false); toast.success("Passcode saved."); } }}
+            >
+              <p className="hud-label text-accent">Locked · enter your JARVIS passcode</p>
+              <Input type="password" value={passInput} onChange={(e) => setPassInput(e.target.value)} placeholder="Passcode" autoFocus />
+              <Button type="submit" size="sm">Unlock</Button>
+            </form>
+          )}
           {messages.length === 0 && (
             <div className="py-16 text-center">
               <p className="text-2xl text-foreground">Good day. How may I assist?</p>
@@ -291,7 +333,7 @@ function Jarvis() {
           {pending.map((p) => (
             <div key={p.toolCallId} className="rounded-lg border border-accent bg-card p-4">
               <p className="hud-label text-accent">Approval required · {p.tool.replace("_", " ")}</p>
-              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-sm">{p.diff !== undefined ? <DiffView diff={p.diff} /> : p.tool === "draft_message" ? `${p.input.channel} → ${p.input.to}\nSubject: ${p.input.subject}\n\n${p.input.body}` : JSON.stringify(p.input, null, 2)}</pre>
+              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-sm">{p.diff !== undefined ? <DiffView diff={p.diff} /> : p.tool === "create_event" ? `${p.input.summary}\n${p.input.start} → ${p.input.end}${p.input.description ? `\n\n${p.input.description}` : ""}` : p.tool === "draft_message" ? `${p.input.channel} → ${p.input.to}\nSubject: ${p.input.subject}\n\n${p.input.body}` : JSON.stringify(p.input, null, 2)}</pre>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => decide(p, true)}><Check /> Approve</Button>
                 <Button size="sm" variant="outline" onClick={() => decide(p, false)}><X /> Decline</Button>
@@ -368,6 +410,7 @@ function Jarvis() {
           </TabsContent>
 
           <TabsContent value="permissions" className="space-y-2 overflow-y-auto">
+            <Button size="sm" variant="ghost" onClick={() => { localStorage.removeItem("jarvis.passcode"); setLocked(true); }}>Lock JARVIS</Button>
             {([1, 2, 3, 4, 5] as PermissionLevel[]).map((l) => (
               <button
                 key={l}
