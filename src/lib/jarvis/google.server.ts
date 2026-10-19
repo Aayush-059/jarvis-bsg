@@ -57,7 +57,7 @@ export async function listEvents(days: number): Promise<Result> {
   };
 }
 
-export async function createEvent(input: { summary: string; start: string; end: string; description?: string; timeZone?: string }): Promise<Result> {
+export async function createEvent(input: { summary: string; start: string; end: string; description?: string | undefined; timeZone?: string | undefined }): Promise<Result> {
   const h = headers("GOOGLE_CALENDAR_API_KEY");
   if (!h) return { ok: false, reason: "Google Calendar is not connected." };
   if (Number.isNaN(Date.parse(input.start)) || Number.isNaN(Date.parse(input.end))) return { ok: false, reason: "Start or end time is not a valid date." };
