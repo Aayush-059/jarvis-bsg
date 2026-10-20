@@ -28,7 +28,10 @@ export type ToolName =
   | "list_events"
   | "create_event"
   | "search_email"
-  | "read_email";
+  | "read_email"
+  | "web_search"
+  | "screen_click"
+  | "screen_type";
 
 /** Minimum permission level required to even offer a tool to the model. */
 export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
@@ -49,16 +52,26 @@ export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
   search_email: 3,
   read_email: 3,
   create_event: 4,
+  web_search: 2,
+  screen_click: 4,
+  screen_type: 4,
 };
 
 /** Tools executed by the Windows helper on the user's PC. */
-export const PC_TOOLS: ToolName[] = ["launch_app", "list_files", "search_files", "read_file", "write_file", "restore_file", "take_screenshot"];
+export const PC_TOOLS: ToolName[] = ["launch_app", "list_files", "search_files", "read_file", "write_file", "restore_file", "take_screenshot", "screen_click", "screen_type"];
 
 /** Apps the helper may launch. Must match APPS in public/jarvis-helper/jarvis_helper.py. */
 export const APPROVED_APPS = ["calculator", "notepad", "paint", "explorer"] as const;
 
 /** Tools that are always confirmed by the user, at any level. */
-const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "create_event", "write_file", "restore_file", "take_screenshot"];
+const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "create_event", "write_file", "restore_file", "take_screenshot", "screen_click", "screen_type"];
+
+/** Validates screen-typing text: bounded, printable, no control keys (helper re-checks). */
+export function validateScreenText(t: string): { ok: true } | { ok: false; reason: string } {
+  if (!t || t.length > 500) return { ok: false, reason: "Text must be 1-500 characters." };
+  if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(t)) return { ok: false, reason: "Control characters and shortcuts are not allowed." };
+  return { ok: true };
+}
 
 export function toolsForLevel(level: PermissionLevel): ToolName[] {
   return (Object.keys(TOOL_MIN_LEVEL) as ToolName[]).filter((t) => TOOL_MIN_LEVEL[t] <= level);
