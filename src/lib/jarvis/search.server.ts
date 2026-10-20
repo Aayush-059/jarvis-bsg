@@ -1,6 +1,6 @@
 // Live web search via Gemini Google Search grounding on the Lovable AI Gateway. Server-only.
 const URL_CC = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-3.5-flash";
+const MODEL = "google/gemini-3.8-flash";
 
 type Result = { ok: boolean; reason?: string; [k: string]: unknown };
 
