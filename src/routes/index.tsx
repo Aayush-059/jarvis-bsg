@@ -18,6 +18,7 @@ import {
   PERMISSION_LEVELS,
   isToolAllowed,
   needsConfirmation,
+  validateScreenText,
   validateWebsite,
   type PermissionLevel,
   type ToolName,
@@ -41,7 +42,7 @@ export const Route = createFileRoute("/")({
 });
 
 const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message", ...PC_TOOLS];
-type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; summary?: string; start?: string; end?: string; description?: string; timeZone?: string; app?: string; path?: string; query?: string; reason?: string };
+type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; summary?: string; start?: string; end?: string; description?: string; timeZone?: string; app?: string; path?: string; query?: string; reason?: string; x?: number; y?: number; text?: string; screen_token?: string; target?: string };
 type Pending = { toolCallId: string; tool: ToolName; input: ToolInput; diff?: string };
 type Phase = "IDLE" | "LISTENING" | "PROCESSING" | "AWAITING APPROVAL" | "SPEAKING";
 
@@ -122,6 +123,10 @@ function Jarvis() {
     if (p.input.path !== undefined && !isSafeWorkspacePath(p.input.path)) {
       return output(p, { ok: false, reason: "That path is outside the workspace." }, "rejected", `Blocked path ${p.input.path}`);
     }
+    if (p.tool === "screen_type") {
+      const v = validateScreenText(p.input.text ?? "");
+      if (!v.ok) return output(p, { ok: false, reason: v.reason }, "rejected", v.reason);
+    }
     if (needsConfirmation(p.tool, level)) {
       if (p.tool === "write_file") {
         // Show a real diff from the PC before asking for approval.
@@ -167,13 +172,19 @@ function Jarvis() {
       write_file: ["/files/write", { path: p.input.path, content: p.input.content }],
       restore_file: ["/files/restore", { path: p.input.path }],
       take_screenshot: ["/screen/capture", {}],
+      screen_click: ["/screen/click", { screen_token: p.input.screen_token, x: p.input.x, y: p.input.y }],
+      screen_type: ["/screen/type", { screen_token: p.input.screen_token, text: p.input.text }],
     };
     const [path, body] = routes[p.tool]!;
     const r = await callHelper(path, body, p.tool === "launch_app" ? 20000 : 15000);
     if (halted.current) return;
     if (p.tool === "take_screenshot" && r.ok) {
       setShots((x) => [`data:image/png;base64,${r["png_base64"]}`, ...x].slice(0, 3));
-      return output(p, { ok: true, width: r["width"], height: r["height"], note: "Screenshot shown to the user." }, "executed", "Screenshot captured");
+      // The image goes to the model (server converts it to an image input) so it can see the screen.
+      return output(p, { ok: true, width: r["width"], height: r["height"], screen_token: r["screen_token"], foreground_app: r["foreground_app"] ?? null, png_base64: r["png_base64"] }, "executed", `Screenshot captured (front app: ${r["foreground_app"] ?? "none approved"})`);
+    }
+    if (p.tool === "screen_type" && r.ok) {
+      return output(p, r, "executed", `Typed ${p.input.text?.length ?? 0} characters into ${String(r["app"])}`);
     }
     output(p, r, r.ok ? "executed" : "failed", r.ok ? `${p.tool} ${p.input.app ?? p.input.path ?? p.input.query ?? ""}` : (r.reason ?? "Failed"));
   }
@@ -302,7 +313,7 @@ function Jarvis() {
           {messages.length === 0 && (
             <div className="py-16 text-center">
               <p className="text-2xl text-foreground">Good day. How may I assist?</p>
-              <p className="mt-2 text-sm text-muted-foreground">Try “What's 18% of 2,450?”, “Remember I prefer tea”, or “Open YouTube”.</p>
+              <p className="mt-2 text-sm text-muted-foreground">Try “What's in the news today?”, “Remember I prefer tea”, or “Type a shopping list in Notepad”.</p>
             </div>
           )}
           {messages.map((m) => (
@@ -333,7 +344,13 @@ function Jarvis() {
           {pending.map((p) => (
             <div key={p.toolCallId} className="rounded-lg border border-accent bg-card p-4">
               <p className="hud-label text-accent">Approval required · {p.tool.replace("_", " ")}</p>
-              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-sm">{p.diff !== undefined ? <DiffView diff={p.diff} /> : p.tool === "create_event" ? `${p.input.summary}\n${p.input.start} → ${p.input.end}${p.input.description ? `\n\n${p.input.description}` : ""}` : p.tool === "draft_message" ? `${p.input.channel} → ${p.input.to}\nSubject: ${p.input.subject}\n\n${p.input.body}` : JSON.stringify(p.input, null, 2)}</pre>
+              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-sm">{p.diff !== undefined ? <DiffView diff={p.diff} /> : p.tool === "create_event" ? `${p.input.summary}\n${p.input.start} → ${p.input.end}${p.input.description ? `\n\n${p.input.description}` : ""}` : p.tool === "draft_message" ? `${p.input.channel} → ${p.input.to}\nSubject: ${p.input.subject}\n\n${p.input.body}` : p.tool === "screen_click" ? `Click “${p.input.target ?? "?"}” at (${p.input.x}, ${p.input.y})` : p.tool === "screen_type" ? `Type into the front app:\n\n${p.input.text}` : JSON.stringify(p.input, null, 2)}</pre>
+              {p.tool === "screen_click" && shots[0] && (
+                <div className="relative mt-2 inline-block">
+                  <img src={shots[0]} alt="Where JARVIS wants to click" className="max-h-72 rounded-md border border-border" />
+                  <ClickMarker x={p.input.x ?? 0} y={p.input.y ?? 0} src={shots[0]} />
+                </div>
+              )}
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => decide(p, true)}><Check /> Approve</Button>
                 <Button size="sm" variant="outline" onClick={() => decide(p, false)}><X /> Decline</Button>
@@ -406,7 +423,7 @@ function Jarvis() {
               <Button size="sm" variant="ghost" onClick={helper.check}>Re-check</Button>
               {helper.token && <Button size="sm" variant="ghost" onClick={helper.unpair}>Forget pairing</Button>}
             </div>
-            <p className="text-xs text-muted-foreground">Allowed apps: {APPROVED_APPS.join(", ")}. Files only inside the workspace folder. Writes show a diff first and keep a backup you can restore.</p>
+            <p className="text-xs text-muted-foreground">Allowed apps: {APPROVED_APPS.join(", ")}. Screen clicks and typing work only in Calculator, Notepad or Paint when they are in front, and you approve each one. Files only inside the workspace folder. Writes show a diff first and keep a backup you can restore.</p>
           </TabsContent>
 
           <TabsContent value="permissions" className="space-y-2 overflow-y-auto">
@@ -469,6 +486,17 @@ function Jarvis() {
       </aside>
     </main>
   );
+}
+
+function ClickMarker({ x, y, src }: { x: number; y: number; src: string }) {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setSize({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = src;
+  }, [src]);
+  if (!size) return null;
+  return <span className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent bg-accent/40 shadow-glow" style={{ left: `${(x / size.w) * 100}%`, top: `${(y / size.h) * 100}%` }} />;
 }
 
 function DiffView({ diff }: { diff: string }) {
