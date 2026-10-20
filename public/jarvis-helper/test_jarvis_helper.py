@@ -61,3 +61,83 @@ def test_origins():
     assert not origin_allowed("https://evil.com")
     assert not origin_allowed("https://lovable.app.evil.com")
     assert not origin_allowed(None)
+
+
+class FakeImg:
+    size = (2560, 1440)
+    width, height = 2560, 1440
+    def thumbnail(self, s):
+        self.width, self.height = 1280, 720
+    def save(self, buf, fmt):
+        buf.write(b"png")
+
+
+@pytest.fixture
+def screen(helper, monkeypatch):
+    state = {"fg": "notepad.exe", "clicks": [], "typed": []}
+    monkeypatch.setattr(helper, "_grab", lambda: FakeImg())
+    monkeypatch.setattr(helper, "_foreground_image", lambda: state["fg"])
+    monkeypatch.setattr(helper, "_inject_click", lambda x, y: state["clicks"].append((x, y)))
+    monkeypatch.setattr(helper, "_inject_text", lambda t: state["typed"].append(t))
+    return helper, state
+
+
+def test_click_scales_and_executes(screen):
+    h, st = screen
+    tok = h.screenshot()["screen_token"]
+    assert h.screen_click(tok, 100, 50)["ok"]
+    assert st["clicks"] == [(200, 100)]
+
+
+def test_token_is_single_use(screen):
+    h, st = screen
+    tok = h.screenshot()["screen_token"]
+    h.screen_click(tok, 1, 1)
+    with pytest.raises(PolicyError):
+        h.screen_click(tok, 1, 1)
+    assert len(st["clicks"]) == 1
+
+
+def test_unapproved_foreground_refused(screen):
+    h, st = screen
+    st["fg"] = "cmd.exe"
+    tok = h.screenshot()["screen_token"]
+    with pytest.raises(PolicyError):
+        h.screen_type(tok, "dir")
+    assert st["typed"] == []
+
+
+def test_foreground_change_refused(screen):
+    h, st = screen
+    tok = h.screenshot()["screen_token"]
+    st["fg"] = "chrome.exe"
+    with pytest.raises(PolicyError):
+        h.screen_click(tok, 1, 1)
+    assert st["clicks"] == []
+
+
+def test_out_of_bounds_and_bad_coords(screen):
+    h, st = screen
+    for x, y in [(1280, 1), (-1, 0), (1.5, 2), ("3", 4), (True, 1)]:
+        tok = h.screenshot()["screen_token"]
+        with pytest.raises(PolicyError):
+            h.screen_click(tok, x, y)
+    assert st["clicks"] == []
+
+
+def test_expired_token(screen, monkeypatch):
+    h, st = screen
+    tok = h.screenshot()["screen_token"]
+    h._screen_token["at"] -= 1000
+    with pytest.raises(PolicyError):
+        h.screen_click(tok, 1, 1)
+
+
+def test_typing_rejects_control_and_long(screen):
+    h, st = screen
+    for bad in ["\x1b[A", "a" * 501, ""]:
+        tok = h.screenshot()["screen_token"]
+        with pytest.raises(PolicyError):
+            h.screen_type(tok, bad)
+    tok = h.screenshot()["screen_token"]
+    assert h.screen_type(tok, "hello\nworld")["typed_chars"] == 11

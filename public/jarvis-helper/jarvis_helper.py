@@ -40,7 +40,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 HOST = "127.0.0.1"  # never 0.0.0.0
 PORT = 8765
 MAX_READ_BYTES = 200_000
@@ -55,6 +55,11 @@ APPS: dict[str, tuple[list[str], list[str]]] = {
     "paint": (["mspaint.exe"], ["mspaint.exe", "Paint.exe"]),
     "explorer": (["explorer.exe", "{workspace}"], ["explorer.exe"]),
 }
+
+# Apps whose windows JARVIS may click/type into (must be in the foreground).
+SCREEN_APPS = ("calculator", "notepad", "paint")
+SCREEN_TOKEN_TTL = 90  # seconds
+MAX_TYPE_CHARS = 500
 
 ALLOWED_ORIGIN_SUFFIXES = (".lovable.app", ".lovableproject.com", ".lovable.dev")
 
@@ -113,6 +118,7 @@ class Helper:
         self.backups = state_dir / "backups"
         self.backups.mkdir(parents=True, exist_ok=True)
         self.audit_path = state_dir / "audit.log"
+        self._screen_token: dict | None = None  # one-use, bound to a fresh screenshot
 
     # ---------- audit ----------
     def audit(self, action: str, detail: dict, ok: bool) -> None:
@@ -235,16 +241,114 @@ class Helper:
         return image.lower() in out.lower()
 
     # ---------- screen ----------
-    def screenshot(self) -> dict:
+    # Win32 calls are isolated in tiny methods so tests can mock them.
+    def _foreground_image(self) -> str | None:
+        if sys.platform != "win32":
+            return None
+        import ctypes
+        from ctypes import wintypes
+        user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return None
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        h = kernel32.OpenProcess(0x1000, False, pid.value)  # QUERY_LIMITED_INFORMATION
+        if not h:
+            return None
+        try:
+            buf = ctypes.create_unicode_buffer(520)
+            size = wintypes.DWORD(520)
+            if not kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                return None
+            return Path(buf.value).name
+        finally:
+            kernel32.CloseHandle(h)
+
+    def foreground_app(self) -> str | None:
+        image = (self._foreground_image() or "").lower()
+        for app in SCREEN_APPS:
+            if image and image in [p.lower() for p in APPS[app][1]]:
+                return app
+        return None
+
+    def _grab(self):
         try:
             from PIL import ImageGrab  # type: ignore
         except ImportError:
             raise PolicyError("Screenshots need Pillow: run  pip install pillow")
-        img = ImageGrab.grab()
+        return ImageGrab.grab()
+
+    def screenshot(self) -> dict:
+        img = self._grab()
+        full_w, full_h = img.size
         img.thumbnail((1280, 1280))
         buf = io.BytesIO()
         img.save(buf, "PNG")
-        return {"ok": True, "width": img.width, "height": img.height, "png_base64": base64.b64encode(buf.getvalue()).decode()}
+        app = self.foreground_app()
+        token = secrets.token_urlsafe(16)
+        # A new capture invalidates any older token.
+        self._screen_token = {"token": token, "at": time.time(), "w": img.width, "h": img.height,
+                              "sx": full_w / img.width, "sy": full_h / img.height, "app": app}
+        return {"ok": True, "width": img.width, "height": img.height, "screen_token": token,
+                "foreground_app": app, "png_base64": base64.b64encode(buf.getvalue()).decode()}
+
+    def _consume_token(self, token: str) -> dict:
+        t, self._screen_token = self._screen_token, None  # one use, even on failure
+        if not t or not isinstance(token, str) or not hmac.compare_digest(token, t["token"]):
+            raise PolicyError("Screen token is missing, used or wrong. Take a new screenshot first.")
+        if time.time() - t["at"] > SCREEN_TOKEN_TTL:
+            raise PolicyError("Screenshot is too old. Take a new one.")
+        if not t["app"]:
+            raise PolicyError(f"No approved app was in front. Only {', '.join(SCREEN_APPS)} can be controlled.")
+        now = self.foreground_app()
+        if now != t["app"]:
+            raise PolicyError("The window in front changed since the screenshot. Nothing was done.")
+        return t
+
+    def _inject_click(self, x: int, y: int) -> None:
+        import ctypes
+        u = ctypes.windll.user32
+        u.SetCursorPos(x, y)
+        u.mouse_event(0x0002, 0, 0, 0, 0)  # left down
+        u.mouse_event(0x0004, 0, 0, 0, 0)  # left up
+
+    def _inject_text(self, text: str) -> None:
+        import ctypes
+        from ctypes import wintypes
+        class KI(ctypes.Structure):
+            _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
+                        ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+        class INP(ctypes.Structure):
+            class _U(ctypes.Union):
+                _fields_ = [("ki", KI), ("pad", ctypes.c_byte * 32)]
+            _anonymous_ = ("u",)
+            _fields_ = [("type", wintypes.DWORD), ("u", _U)]
+        for ch in text.replace("\r\n", "\n"):
+            code = 0x0D if ch == "\n" else ord(ch)
+            flags = 0 if ch == "\n" else 0x0004  # KEYEVENTF_UNICODE: literal text, never hotkeys
+            for up in (0, 0x0002):
+                i = INP(type=1)
+                i.ki = KI(code if ch == "\n" else 0, 0 if ch == "\n" else code, flags | up, 0, 0)
+                ctypes.windll.user32.SendInput(1, ctypes.byref(i), ctypes.sizeof(INP))
+
+    def screen_click(self, token: str, x, y) -> dict:
+        if not all(isinstance(v, int) and not isinstance(v, bool) for v in (x, y)):
+            raise PolicyError("Coordinates must be whole numbers.")
+        t = self._consume_token(token)
+        if not (0 <= x < t["w"] and 0 <= y < t["h"]):
+            raise PolicyError("That point is outside the screenshot.")
+        self._inject_click(round(x * t["sx"]), round(y * t["sy"]))
+        return {"ok": True, "app": t["app"], "clicked": [x, y], "note": "Take a screenshot to verify the result."}
+
+    def screen_type(self, token: str, text) -> dict:
+        if not isinstance(text, str) or not text or len(text) > MAX_TYPE_CHARS:
+            raise PolicyError(f"Text must be 1-{MAX_TYPE_CHARS} characters.")
+        if any((ord(c) < 32 and c not in "\n\t") or ord(c) == 127 for c in text):
+            raise PolicyError("Control characters and shortcuts are not allowed.")
+        t = self._consume_token(token)
+        self._inject_text(text)
+        return {"ok": True, "app": t["app"], "typed_chars": len(text), "note": "Take a screenshot to verify the result."}
 
     def status(self) -> dict:
         return {"ok": True, "version": VERSION, "workspace": str(self.workspace), "apps": list(APPS), "platform": sys.platform}
@@ -260,8 +364,10 @@ ROUTES = {
     "/files/write": lambda h, b: h.write_file(str(b.get("path", "")), str(b.get("content", ""))),
     "/files/restore": lambda h, b: h.restore_file(str(b.get("path", ""))),
     "/screen/capture": lambda h, b: h.screenshot(),
+    "/screen/click": lambda h, b: h.screen_click(b.get("screen_token", ""), b.get("x"), b.get("y")),
+    "/screen/type": lambda h, b: h.screen_type(b.get("screen_token", ""), b.get("text")),
 }
-LOGGED = {"/apps/launch", "/files/write", "/files/restore", "/screen/capture", "/files/read"}
+LOGGED = {"/screen/click", "/screen/type", "/apps/launch", "/files/write", "/files/restore", "/screen/capture", "/files/read"}
 
 
 def make_handler(helper: Helper, token: str, extra_origins: list[str]):
@@ -307,7 +413,7 @@ def make_handler(helper: Helper, token: str, extra_origins: list[str]):
                 body = json.loads(self.rfile.read(length) or b"{}")
                 result = route(helper, body)
                 if self.path in LOGGED:
-                    helper.audit(self.path, {"input": {k: v for k, v in body.items() if k != "content"}}, bool(result.get("ok")))
+                    helper.audit(self.path, {"input": {k: v for k, v in body.items() if k not in ("content", "text", "screen_token")}}, bool(result.get("ok")))
                 self._send(200, result)
             except PolicyError as e:
                 helper.audit(self.path, {"rejected": str(e)}, False)

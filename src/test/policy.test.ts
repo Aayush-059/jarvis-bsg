@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSafeWorkspacePath, isToolAllowed, needsConfirmation, safeCalculate, toolsForLevel, validateWebsite } from "@/lib/jarvis/policy";
+import { isSafeWorkspacePath, isToolAllowed, needsConfirmation, safeCalculate, toolsForLevel, validateScreenText, validateWebsite } from "@/lib/jarvis/policy";
 
 describe("permission levels", () => {
   it("level 1 offers no tools", () => expect(toolsForLevel(1)).toEqual([]));
@@ -44,4 +44,14 @@ describe("Google rules", () => {
   it("creating calendar events always asks", () => expect(needsConfirmation("create_event", 5)).toBe(true));
   it("sending messages (drafts) always asks", () => expect(needsConfirmation("draft_message", 5)).toBe(true));
   it("reading email needs level 3", () => expect(isToolAllowed("search_email", 2)).toBe(false));
+});
+
+describe("screen control and search", () => {
+  it("screen click always asks, even at level 5", () => expect(needsConfirmation("screen_click", 5)).toBe(true));
+  it("screen typing always asks, even at level 5", () => expect(needsConfirmation("screen_type", 5)).toBe(true));
+  it("screen control is blocked below level 4", () => expect(isToolAllowed("screen_click", 3)).toBe(false));
+  it("web search is available from level 2", () => expect(isToolAllowed("web_search", 2)).toBe(true));
+  it("typing rejects control characters", () => expect(validateScreenText("hi\u001b[A").ok).toBe(false));
+  it("typing rejects over 500 chars", () => expect(validateScreenText("a".repeat(501)).ok).toBe(false));
+  it("typing accepts plain text with newlines", () => expect(validateScreenText("hello\nworld").ok).toBe(true));
 });
