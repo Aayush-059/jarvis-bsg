@@ -38,14 +38,14 @@ public class MainActivity extends Activity {
     // Microphone only, only for the JARVIS site.
     web.setWebChromeClient(new WebChromeClient() {
       @Override public void onPermissionRequest(final PermissionRequest req) {
-        runOnUiThread(() -> {
+        runOnUiThread(new Runnable() { public void run() {
           if (!HOST.equals(req.getOrigin().getHost())) { req.deny(); return; }
           for (String r : req.getResources()) if (!PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) { req.deny(); return; }
           if (checkSelfPermission("android.permission.RECORD_AUDIO") != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{"android.permission.RECORD_AUDIO"}, 1);
             req.deny(); // user taps the mic again after allowing
           } else req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-        });
+        }});
       }
     });
     setContentView(web);
