@@ -20,7 +20,7 @@ export async function webSearch(query: string, signal?: AbortSignal): Promise<Re
     try {
       res = await fetch(URL_CC, {
         method: "POST",
-        signal,
+        signal: signal ?? null,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, "Lovable-API-Key": key, "X-Lovable-AIG-SDK": "fetch" },
         body: JSON.stringify({
           model: MODEL,
