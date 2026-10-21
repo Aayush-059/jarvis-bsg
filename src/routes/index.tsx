@@ -42,7 +42,7 @@ export const Route = createFileRoute("/")({
 });
 
 const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message", ...PC_TOOLS];
-type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; summary?: string; start?: string; end?: string; description?: string; timeZone?: string; app?: string; path?: string; query?: string; reason?: string; x?: number; y?: number; text?: string; screen_token?: string; target?: string };
+type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; summary?: string; start?: string; end?: string; description?: string; timeZone?: string; app?: string; path?: string; query?: string; reason?: string; x?: number; y?: number; text?: string; screen_token?: string };
 type Pending = { toolCallId: string; tool: ToolName; input: ToolInput; diff?: string };
 type Phase = "IDLE" | "LISTENING" | "PROCESSING" | "AWAITING APPROVAL" | "SPEAKING";
 
