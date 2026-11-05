@@ -70,7 +70,7 @@ function textOf(m: UIMessage) {
   return m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
 }
 
-function Jarvis({ userId, email }: { userId: string; email?: string }) {
+function Jarvis({ userId, email }: { userId: string; email?: string | undefined }) {
   const store = useJarvisStore(userId);
   const storeRef = useRef(store);
   storeRef.current = store;
