@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { checkPasscode, createEvent, sendEmail } from "@/lib/jarvis/google.server";
+import { createEvent, sendEmail } from "@/lib/jarvis/google.server";
+import { getCaller } from "@/lib/jarvis/auth.server";
 
 // Consequential Google actions. Only called by the browser AFTER the user approved.
 const schema = z.discriminatedUnion("action", [
@@ -12,8 +13,9 @@ export const Route = createFileRoute("/api/google")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const denied = checkPasscode(request);
-        if (denied) return denied;
+        const caller = await getCaller(request);
+        if (caller instanceof Response) return caller;
+        if (!caller.isOwner) return Response.json({ ok: false, reason: "Gmail and Calendar aren't connected for your account yet." }, { status: 403 });
         const parsed = schema.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return Response.json({ ok: false, reason: "Invalid request." }, { status: 400 });
         const d = parsed.data;
