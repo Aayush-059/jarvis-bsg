@@ -28,6 +28,26 @@ import { callHelper, useHelper } from "@/lib/jarvis/helper-client";
 import { Input } from "@/components/ui/input";
 import { useVoice } from "@/lib/jarvis/voice";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { AuthScreen } from "@/components/AuthScreen";
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const t = data.session?.access_token;
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+function JarvisGate() {
+  const [user, setUser] = useState<{ id: string; email?: string } | null | undefined>(undefined);
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null));
+    supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+  if (user === undefined) return <div className="min-h-screen bg-background" />;
+  if (!user) return <AuthScreen />;
+  return <Jarvis key={user.id} userId={user.id} email={user.email} />;
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -38,7 +58,7 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Talk to JARVIS. It remembers, acts within your permissions, and logs everything." },
     ],
   }),
-  component: Jarvis,
+  component: JarvisGate,
 });
 
 const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message", ...PC_TOOLS];
@@ -50,8 +70,8 @@ function textOf(m: UIMessage) {
   return m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
 }
 
-function Jarvis() {
-  const store = useJarvisStore();
+function Jarvis({ userId, email }: { userId: string; email?: string }) {
+  const store = useJarvisStore(userId);
   const storeRef = useRef(store);
   storeRef.current = store;
   const [input, setInput] = useState("");
@@ -60,9 +80,6 @@ function Jarvis() {
   const [shots, setShots] = useState<string[]>([]);
   const helper = useHelper();
   const [pairCode, setPairCode] = useState("");
-  const [locked, setLocked] = useState(false);
-  const [passInput, setPassInput] = useState("");
-  useEffect(() => { if (!localStorage.getItem("jarvis.passcode")) setLocked(true); }, []);
   const roundTrips = useRef(0);
   const halted = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -71,7 +88,7 @@ function Jarvis() {
   const chat = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      headers: () => ({ "X-Jarvis-Passcode": localStorage.getItem("jarvis.passcode") ?? "" }),
+      headers: authHeaders,
       body: () => ({
         level: storeRef.current.level,
         memories: storeRef.current.memories.map((m) => ({ id: m.id, content: m.content })),
@@ -94,10 +111,8 @@ function Jarvis() {
       maybeSummarize();
     },
     onError: (e) => {
-      if (/passcode/i.test(e.message)) {
-        setLocked(true);
-        toast.error(/Set a JARVIS passcode/.test(e.message) ? "No passcode is set up yet." : "Wrong passcode. Enter it in the Access tab.");
-      } else toast.error(e.message || "Connection to JARVIS failed.");
+      if (/sign in/i.test(e.message)) toast.error("Please sign in again.");
+      else toast.error(e.message || "Connection to JARVIS failed.");
     },
   });
   const { messages, sendMessage, status, stop, addToolOutput, setMessages } = chat;
@@ -150,11 +165,11 @@ function Jarvis() {
     try {
       const res = await fetch("/api/google", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Jarvis-Passcode": localStorage.getItem("jarvis.passcode") ?? "" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify(body),
       });
       r = await res.json().catch(() => ({ ok: false, reason: `Server replied ${res.status}` }));
-      if (res.status === 401 || res.status === 503) r = { ok: false, reason: "Passcode missing or wrong." };
+      if (res.status === 401) r = { ok: false, reason: "You are signed out." };
     } catch {
       r = { ok: false, reason: "Network error — nothing was sent." };
     }
@@ -258,7 +273,7 @@ function Jarvis() {
     summarizing.current = true;
     try {
       const text = msgs.slice(0, cut).map((m) => `${m.role}: ${textOf(m)}`).join("\n");
-      const r = await fetch("/api/summarize", { method: "POST", body: JSON.stringify({ text, previous: storeRef.current.summary }), headers: { "Content-Type": "application/json", "X-Jarvis-Passcode": localStorage.getItem("jarvis.passcode") ?? "" } });
+      const r = await fetch("/api/summarize", { method: "POST", body: JSON.stringify({ text, previous: storeRef.current.summary }), headers: { "Content-Type": "application/json", ...(await authHeaders()) } });
       const j = await r.json();
       if (r.ok && j.summary) {
         storeRef.current.setSummary(j.summary);
@@ -300,16 +315,6 @@ function Jarvis() {
         </header>
 
         <div ref={scrollRef} className="hud-panel min-h-[50vh] flex-1 space-y-4 overflow-y-auto p-5">
-          {locked && (
-            <form
-              className="mx-auto max-w-sm space-y-2 rounded-lg border border-accent p-4"
-              onSubmit={(e) => { e.preventDefault(); if (passInput.trim()) { localStorage.setItem("jarvis.passcode", passInput.trim()); setPassInput(""); setLocked(false); toast.success("Passcode saved."); } }}
-            >
-              <p className="hud-label text-accent">Locked · enter your JARVIS passcode</p>
-              <Input type="password" value={passInput} onChange={(e) => setPassInput(e.target.value)} placeholder="Passcode" autoFocus />
-              <Button type="submit" size="sm">Unlock</Button>
-            </form>
-          )}
           {messages.length === 0 && (
             <div className="py-16 text-center">
               <p className="text-2xl text-foreground">Good day. How may I assist?</p>
@@ -427,7 +432,10 @@ function Jarvis() {
           </TabsContent>
 
           <TabsContent value="permissions" className="space-y-2 overflow-y-auto">
-            <Button size="sm" variant="ghost" onClick={() => { localStorage.removeItem("jarvis.passcode"); setLocked(true); }}>Lock JARVIS</Button>
+            <div className="flex items-center justify-between gap-2 rounded-md border border-border p-2 text-sm">
+              <span className="truncate text-muted-foreground">Signed in as {email ?? "you"}</span>
+              <Button size="sm" variant="ghost" onClick={() => { stop(); supabase.auth.signOut(); }}>Sign out</Button>
+            </div>
             {([1, 2, 3, 4, 5] as PermissionLevel[]).map((l) => (
               <button
                 key={l}
