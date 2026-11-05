@@ -36,11 +36,13 @@ function useLocal<T>(key: string, initial: T) {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-export function useJarvisStore() {
-  const [memories, setMemories] = useLocal<Memory[]>("jarvis.memories", []);
-  const [audit, setAudit] = useLocal<AuditEntry[]>("jarvis.audit", []);
-  const [level, setLevelState] = useLocal<PermissionLevel>("jarvis.level", 4);
-  const [summary, setSummary] = useLocal<string>("jarvis.summary", "");
+export function useJarvisStore(userId: string) {
+  // Every account gets its own memories, log and settings on this device.
+  const k = (name: string) => `jarvis.${userId}.${name}`;
+  const [memories, setMemories] = useLocal<Memory[]>(k("memories"), []);
+  const [audit, setAudit] = useLocal<AuditEntry[]>(k("audit"), []);
+  const [level, setLevelState] = useLocal<PermissionLevel>(k("level"), 4);
+  const [summary, setSummary] = useLocal<string>(k("summary"), "");
 
   return {
     memories,

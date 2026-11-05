@@ -14,9 +14,11 @@ import {
   PERMISSION_LEVELS,
   safeCalculate,
   toolsForLevel,
+  GOOGLE_TOOLS,
   type PermissionLevel,
 } from "./policy";
-import { checkPasscode, listEvents, readEmail, searchEmail } from "./google.server";
+import { listEvents, readEmail, searchEmail } from "./google.server";
+import { getCaller } from "./auth.server";
 import { webSearch } from "./search.server";
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
@@ -158,8 +160,8 @@ function systemPrompt(level: PermissionLevel, memories: { id: string; content: s
 }
 
 export async function handleChat(request: Request) {
-  const denied = checkPasscode(request);
-  if (denied) return denied;
+  const caller = await getCaller(request);
+  if (caller instanceof Response) return caller;
   const apiKey = process.env['LOVABLE_API_KEY'];
   if (!apiKey) return Response.json({ error: "AI is not configured." }, { status: 500 });
 
@@ -169,7 +171,8 @@ export async function handleChat(request: Request) {
   const messages = parsed.data.messages as UIMessage[];
 
   // Server-side enforcement: the model is only ever shown tools its level allows.
-  const allowed = toolsForLevel(level as PermissionLevel);
+  // Gmail/Calendar belong to the owner's connected account: never offer them to anyone else.
+  const allowed = toolsForLevel(level as PermissionLevel).filter((t) => caller.isOwner || !GOOGLE_TOOLS.includes(t));
 
   const runIdFetch = createLovableAiGatewayRunIdFetch(getLovableAiGatewayRunId(request));
   const provider = createOpenAI({
@@ -181,7 +184,7 @@ export async function handleChat(request: Request) {
 
   const result = streamText({
     model: provider.responses(MODEL),
-    instructions: systemPrompt(level as PermissionLevel, memories, summary),
+    instructions: systemPrompt(level as PermissionLevel, memories, summary) + (caller.isOwner ? "" : "\n\nThis user has not connected Gmail or Calendar; say so if asked."),
     messages: await convertToModelMessages(messages, { tools: allTools as unknown as ToolSet }),
     tools: allTools as unknown as ToolSet,
     activeTools: allowed,
@@ -216,8 +219,8 @@ export async function handleChat(request: Request) {
 
 /** One-shot summarizer used to compress long histories. */
 export async function handleSummarize(request: Request) {
-  const denied = checkPasscode(request);
-  if (denied) return denied;
+  const caller = await getCaller(request);
+  if (caller instanceof Response) return caller;
   const apiKey = process.env['LOVABLE_API_KEY'];
   if (!apiKey) return Response.json({ error: "AI is not configured." }, { status: 500 });
   const body = z.object({ text: z.string().max(60000), previous: z.string().max(4000).optional() }).safeParse(

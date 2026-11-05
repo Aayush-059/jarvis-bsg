@@ -55,3 +55,11 @@ describe("screen control and search", () => {
   it("typing rejects over 500 chars", () => expect(validateScreenText("a".repeat(501)).ok).toBe(false));
   it("typing accepts plain text with newlines", () => expect(validateScreenText("hello\nworld").ok).toBe(true));
 });
+
+import { GOOGLE_TOOLS as G } from "@/lib/jarvis/policy";
+import { describe as d2, it as i2, expect as e2 } from "vitest";
+d2("owner-only Google tools", () => {
+  i2("covers every Gmail and Calendar tool", () => {
+    e2([...G].sort()).toEqual(["create_event", "list_events", "read_email", "search_email"]);
+  });
+});

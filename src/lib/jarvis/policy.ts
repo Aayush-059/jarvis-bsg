@@ -185,3 +185,6 @@ export function isSafeWorkspacePath(rel: string): boolean {
   if (r.length > 260 || r.startsWith("/") || r.startsWith("~") || r.includes(":")) return false;
   return !r.split("/").includes("..");
 }
+
+/** Tools that use the owner's connected Gmail/Calendar. Only the owner account may use them. */
+export const GOOGLE_TOOLS: ToolName[] = ["list_events", "create_event", "search_email", "read_email"];

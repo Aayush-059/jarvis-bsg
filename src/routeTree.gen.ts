@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiGoogleRouteImport } from './routes/api/google'
 import { Route as ApiSummarizeRouteImport } from './routes/api/summarize'
@@ -17,6 +18,11 @@ import { Route as ApiSummarizeRouteImport } from './routes/api/summarize'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
@@ -37,12 +43,14 @@ const ApiSummarizeRoute = ApiSummarizeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/api/chat': typeof ApiChatRoute
   '/api/google': typeof ApiGoogleRoute
   '/api/summarize': typeof ApiSummarizeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/api/chat': typeof ApiChatRoute
   '/api/google': typeof ApiGoogleRoute
   '/api/summarize': typeof ApiSummarizeRoute
@@ -50,20 +58,29 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/api/chat': typeof ApiChatRoute
   '/api/google': typeof ApiGoogleRoute
   '/api/summarize': typeof ApiSummarizeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/chat' | '/api/google' | '/api/summarize'
+  fullPaths:
+    '/' | '/reset-password' | '/api/chat' | '/api/google' | '/api/summarize'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/chat' | '/api/google' | '/api/summarize'
-  id: '__root__' | '/' | '/api/chat' | '/api/google' | '/api/summarize'
+  to: '/' | '/reset-password' | '/api/chat' | '/api/google' | '/api/summarize'
+  id:
+    | '__root__'
+    | '/'
+    | '/reset-password'
+    | '/api/chat'
+    | '/api/google'
+    | '/api/summarize'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiGoogleRoute: typeof ApiGoogleRoute
   ApiSummarizeRoute: typeof ApiSummarizeRoute
@@ -76,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/chat': {
@@ -104,6 +128,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   ApiChatRoute: ApiChatRoute,
   ApiGoogleRoute: ApiGoogleRoute,
   ApiSummarizeRoute: ApiSummarizeRoute,
