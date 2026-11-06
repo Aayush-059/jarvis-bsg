@@ -10,7 +10,7 @@ import android.webkit.*;
 
 // JARVIS for Android: opens the published JARVIS app in a full-screen window.
 public class MainActivity extends Activity {
-  static final String APP_URL = "https://xyz-jarvis-aayush-com-np059.lovable.app";
+  static final String APP_URL = "https://jarvis-bsg.lovable.app";
   static final String HOST = Uri.parse(APP_URL).getHost();
   WebView web;
 
