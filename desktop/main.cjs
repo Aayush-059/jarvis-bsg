@@ -2,7 +2,7 @@
 const { app, BrowserWindow, shell, Menu } = require("electron");
 const path = require("path");
 
-const APP_URL = "https://trusty-desktop-companion.lovable.app";
+const APP_URL = "https://jarvis-bsg.lovable.app";
 const APP_ORIGIN = new URL(APP_URL).origin;
 
 function createWindow() {
