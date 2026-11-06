@@ -12,6 +12,28 @@ type Rec = {
   stop: () => void;
 };
 
+const norm = (s: string) => s.trim().replace(/\s+/g, " ");
+
+/** Joins speech segments, dropping repeats when a browser re-sends earlier words in later segments. */
+export function buildTranscript(finals: string[], pending = ""): string {
+  const out: string[] = [];
+  for (const raw of [...finals, pending]) {
+    const seg = norm(raw);
+    if (!seg) continue;
+    const so_far = out.join(" ").toLowerCase();
+    const low = seg.toLowerCase();
+    if (so_far && low.startsWith(so_far)) {
+      out.length = 0; // segment already contains everything said so far
+      out.push(seg);
+    } else if (so_far.endsWith(low)) {
+      continue; // exact repeat of what we already have
+    } else {
+      out.push(seg);
+    }
+  }
+  return out.join(" ");
+}
+
 export function useVoice(onFinal: (text: string) => void) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
@@ -31,10 +53,18 @@ export function useVoice(onFinal: (text: string) => void) {
     const rec = new Ctor();
     rec.lang = "en-US";
     rec.interimResults = true;
-    rec.continuous = true;
+    // Android Chrome/WebView repeats earlier words in every result when continuous mode is on.
+    rec.continuous = !/android/i.test(navigator.userAgent);
     rec.onresult = (e) => {
-      let text = "";
-      for (let i = 0; i < e.results.length; i++) text += e.results[i]?.[0]?.transcript ?? "";
+      const finals: string[] = [];
+      let pending = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        const t = r?.[0]?.transcript ?? "";
+        if (r?.isFinal) finals.push(t);
+        else pending = t;
+      }
+      const text = buildTranscript(finals, pending);
       finalRef.current = text;
       setInterim(text);
     };
