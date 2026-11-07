@@ -1,4 +1,8 @@
 # JARVIS additions
+- [ ] Expand popular website/service/game destinations with safe opening controls and tests.
+- [ ] Expand installed Windows launch support without unrestricted screen/game control.
+- [ ] Set up individual-user service connections (requires workspace OAuth clients).
+- [ ] Verify expanded access and account isolation before any publication.
 - [x] Rebuild and deliver the Windows ZIP pointing to https://jarvis-bsg.lovable.app; ZIP integrity and packaged address verified (real Windows execution untested).
 - [ ] Connect Slack (blocked: user declined the Slack connection card).
 - [x] Add live web search with sources.

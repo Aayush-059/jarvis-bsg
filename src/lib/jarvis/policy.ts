@@ -1,5 +1,6 @@
 // JARVIS safety policy — pure, shared by server and browser so both sides
 // enforce the same rules (defense in depth). No side effects in this file.
+import { DESTINATIONS } from "./destinations";
 
 export type PermissionLevel = 1 | 2 | 3 | 4 | 5;
 
@@ -61,7 +62,7 @@ export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
 export const PC_TOOLS: ToolName[] = ["launch_app", "list_files", "search_files", "read_file", "write_file", "restore_file", "take_screenshot", "screen_click", "screen_type"];
 
 /** Apps the helper may launch. Must match APPS in public/jarvis-helper/jarvis_helper.py. */
-export const APPROVED_APPS = ["calculator", "notepad", "paint", "explorer"] as const;
+export const APPROVED_APPS = ["calculator", "notepad", "paint", "explorer", "edge", "chrome", "firefox", "spotify", "discord", "steam"] as const;
 
 /** Tools that are always confirmed by the user, at any level. */
 const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "create_event", "write_file", "restore_file", "take_screenshot", "screen_click", "screen_type"];
@@ -88,15 +89,7 @@ export function needsConfirmation(tool: ToolName, level: PermissionLevel): boole
 }
 
 /** Approved websites. Only these hosts (and their subdomains) may be opened. */
-export const APPROVED_SITES = [
-  { id: "google", label: "Google", url: "https://www.google.com" },
-  { id: "youtube", label: "YouTube", url: "https://www.youtube.com" },
-  { id: "gmail", label: "Gmail", url: "https://mail.google.com" },
-  { id: "calendar", label: "Google Calendar", url: "https://calendar.google.com" },
-  { id: "github", label: "GitHub", url: "https://github.com" },
-  { id: "wikipedia", label: "Wikipedia", url: "https://en.wikipedia.org" },
-  { id: "maps", label: "Google Maps", url: "https://maps.google.com" },
-] as const;
+export const APPROVED_SITES = DESTINATIONS;
 
 const APPROVED_HOSTS = ["google.com", "youtube.com", "github.com", "wikipedia.org"];
 
@@ -112,8 +105,13 @@ export function validateWebsite(raw: string): { ok: true; url: string } | { ok: 
   }
   if (u.protocol !== "https:") return { ok: false, reason: "Only secure https sites are allowed." };
   if (u.username || u.password) return { ok: false, reason: "Addresses with credentials are blocked." };
+  if (u.port && u.port !== "443") return { ok: false, reason: "Non-standard ports are blocked." };
   const host = u.hostname.toLowerCase();
-  const approved = APPROVED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  const approved = APPROVED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)) ||
+    APPROVED_SITES.some((s) => {
+      const official = new URL(s.url).hostname.replace(/^www\./, "");
+      return host === official || host === `www.${official}`;
+    });
   if (!approved) return { ok: false, reason: `${host} is not on the approved list.` };
   return { ok: true, url: u.toString() };
 }
