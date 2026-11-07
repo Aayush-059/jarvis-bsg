@@ -1,4 +1,5 @@
 # JARVIS additions
+- [x] Rebuild and deliver the Windows ZIP pointing to https://jarvis-bsg.lovable.app; ZIP integrity and packaged address verified (real Windows execution untested).
 - [ ] Connect Slack (blocked: user declined the Slack connection card).
 - [x] Add live web search with sources.
 - [x] Add screenshot understanding and confirmed Windows click/type actions.
