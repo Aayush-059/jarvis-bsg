@@ -30,6 +30,7 @@ import { useVoice } from "@/lib/jarvis/voice";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { AuthScreen } from "@/components/AuthScreen";
+import { ServiceDirectory } from "@/components/ServiceDirectory";
 
 async function authHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
@@ -56,6 +57,8 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "A voice-enabled personal AI assistant with memory, permissions, approvals and a full action log." },
       { property: "og:title", content: "JARVIS — Personal AI Assistant" },
       { property: "og:description", content: "Talk to JARVIS. It remembers, acts within your permissions, and logs everything." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: JarvisGate,
@@ -190,7 +193,9 @@ function Jarvis({ userId, email }: { userId: string; email?: string | undefined 
       screen_click: ["/screen/click", { screen_token: p.input.screen_token, x: p.input.x, y: p.input.y }],
       screen_type: ["/screen/type", { screen_token: p.input.screen_token, text: p.input.text }],
     };
-    const [path, body] = routes[p.tool]!;
+    const route = routes[p.tool];
+    if (!route) return output(p, { ok: false, reason: "Unsupported PC action." }, "rejected", "Unsupported PC action");
+    const [path, body] = route;
     const r = await callHelper(path, body, p.tool === "launch_app" ? 20000 : 15000);
     if (halted.current) return;
     if (p.tool === "take_screenshot" && r.ok) {
@@ -397,12 +402,17 @@ function Jarvis({ userId, email }: { userId: string; email?: string | undefined 
       {/* Right: control panel */}
       <aside className="hud-panel flex min-h-0 w-full flex-col p-4 lg:w-96">
         <Tabs defaultValue="permissions" className="flex min-h-0 flex-1 flex-col">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="permissions">Access</TabsTrigger>
             <TabsTrigger value="memory">Memory</TabsTrigger>
             <TabsTrigger value="audit">Log</TabsTrigger>
             <TabsTrigger value="pc">PC</TabsTrigger>
+            <TabsTrigger value="services">Services</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="services" className="overflow-y-auto">
+            <ServiceDirectory level={store.level} onRequest={url => store.log({ tool: "open_website", input: { target: url }, status: "executed", detail: `Opening requested: ${url}; destination not verified.` })} />
+          </TabsContent>
 
           <TabsContent value="pc" className="space-y-3 overflow-y-auto text-sm">
             <p className="hud-label">Windows helper · {helper.status}</p>

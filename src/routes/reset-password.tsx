@@ -13,6 +13,8 @@ export const Route = createFileRoute("/reset-password")({
       { name: "description", content: "Choose a new password for your JARVIS account." },
       { property: "og:title", content: "Reset password — JARVIS" },
       { property: "og:description", content: "Choose a new password for your JARVIS account." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: ResetPassword,

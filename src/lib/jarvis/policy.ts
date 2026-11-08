@@ -65,7 +65,7 @@ export const PC_TOOLS: ToolName[] = ["launch_app", "list_files", "search_files",
 export const APPROVED_APPS = ["calculator", "notepad", "paint", "explorer", "edge", "chrome", "firefox", "spotify", "discord", "steam"] as const;
 
 /** Tools that are always confirmed by the user, at any level. */
-const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "create_event", "write_file", "restore_file", "take_screenshot", "screen_click", "screen_type"];
+const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "create_event", "launch_app", "write_file", "restore_file", "take_screenshot", "screen_click", "screen_type"];
 
 /** Validates screen-typing text: bounded, printable, no control keys (helper re-checks). */
 export function validateScreenText(t: string): { ok: true } | { ok: false; reason: string } {
@@ -186,3 +186,8 @@ export function isSafeWorkspacePath(rel: string): boolean {
 
 /** Tools that use the owner's connected Gmail/Calendar. Only the owner account may use them. */
 export const GOOGLE_TOOLS: ToolName[] = ["list_events", "create_event", "search_email", "read_email"];
+
+/** Shared owner connections never become available merely by raising permission level. */
+export function toolsForAccount(level: PermissionLevel, isOwner: boolean): ToolName[] {
+  return toolsForLevel(level).filter(t => isOwner || !GOOGLE_TOOLS.includes(t));
+}

@@ -10,10 +10,10 @@ export function ServiceDirectory({ level, onRequest }: { level: PermissionLevel;
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const matches = DESTINATIONS.filter(s => (category === "All" || s.category === category) && `${s.label} ${s.id}`.toLowerCase().includes(query.toLowerCase().trim()));
-  function open(id: string) {
-    if (!isToolAllowed("open_website", level)) return toast.error("Opening websites needs access level 4 or 5.");
+  function open(id: string): void {
+    if (!isToolAllowed("open_website", level)) { toast.error("Opening websites needs access level 4 or 5."); return; }
     const result = validateWebsite(id);
-    if (!result.ok) return toast.error(result.reason);
+    if (!result.ok) { toast.error(result.reason); return; }
     if (needsConfirmation("open_website", level) && !window.confirm(`Open ${result.url} in your browser?`)) return;
     window.open(result.url, "_blank", "noopener,noreferrer");
     onRequest(result.url);
