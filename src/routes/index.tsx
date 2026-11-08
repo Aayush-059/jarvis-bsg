@@ -305,6 +305,7 @@ function Jarvis({ userId, email }: { userId: string; email?: string | undefined 
           <div className="mr-auto">
             <h1 className="text-3xl font-bold tracking-[0.3em] text-primary">J.A.R.V.I.S.</h1>
             <p className="hud-label">Status · {phase}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Developed by Aayush Acharya</p>
           </div>
           <span className="hud-label flex items-center gap-1.5" title="Windows helper">
             <Monitor className="h-4 w-4" />
