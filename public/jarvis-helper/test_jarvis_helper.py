@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from jarvis_helper import Helper, PolicyError, origin_allowed
+from jarvis_helper import APPS, SCREEN_APPS, Helper, PolicyError, installed_executable, origin_allowed
 
 
 @pytest.fixture
@@ -53,6 +53,48 @@ def test_binary_files_refused(helper):
 def test_unapproved_app_refused(helper):
     with pytest.raises(PolicyError):
         helper.launch_app("cmd")
+
+
+def test_launch_allowlist_matches_browser():
+    import re
+    source = (Path(__file__).parents[2] / "src/lib/jarvis/policy.ts").read_text()
+    match = re.search(r"APPROVED_APPS = \[(.*?)\]", source)
+    assert match is not None
+    assert set(re.findall(r'"(.*?)"', match.group(1))) == set(APPS)
+
+
+def test_new_launch_apps_not_screen_controllable():
+    assert SCREEN_APPS == ("calculator", "notepad", "paint")
+    assert all(app not in SCREEN_APPS for app in ["edge", "chrome", "firefox", "spotify", "discord", "steam"])
+
+
+def test_missing_installation_refused(monkeypatch):
+    for key in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]:
+        monkeypatch.delenv(key, raising=False)
+    with pytest.raises(PolicyError, match="not installed"):
+        installed_executable("chrome")
+
+
+def test_fixed_chrome_location(tmp_path, monkeypatch):
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    exe = tmp_path / "Google/Chrome/Application/chrome.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"test")
+    assert installed_executable("chrome") == exe.resolve()
+
+
+def test_install_symlink_escape_refused(tmp_path, monkeypatch):
+    base = tmp_path / "programs"
+    exe = base / "Google/Chrome/Application/chrome.exe"
+    exe.parent.mkdir(parents=True)
+    outside = tmp_path / "outside.exe"
+    outside.write_bytes(b"test")
+    exe.symlink_to(outside)
+    monkeypatch.setenv("ProgramFiles", str(base))
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    with pytest.raises(PolicyError):
+        installed_executable("chrome")
 
 
 def test_origins():

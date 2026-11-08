@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSafeWorkspacePath, isToolAllowed, needsConfirmation, safeCalculate, toolsForLevel, validateScreenText, validateWebsite } from "@/lib/jarvis/policy";
+import { APPROVED_SITES, isSafeWorkspacePath, isToolAllowed, needsConfirmation, safeCalculate, toolsForAccount, toolsForLevel, validateScreenText, validateWebsite } from "@/lib/jarvis/policy";
 
 describe("permission levels", () => {
   it("level 1 offers no tools", () => expect(toolsForLevel(1)).toEqual([]));
@@ -14,6 +14,14 @@ describe("permission levels", () => {
 });
 
 describe("website allowlist", () => {
+  it.each(["chatgpt", "openai", "claude", "anthropic", "metaai", "gemini", "instagram", "pubgmobile", "genshin", "steam"])("accepts popular destination %s", id => expect(validateWebsite(id).ok).toBe(true));
+  it("validates every official destination", () => {
+    for (const site of APPROVED_SITES) expect(validateWebsite(site.url).ok).toBe(true);
+  });
+  it("rejects provider lookalikes", () => expect(validateWebsite("https://claude.ai.evil.com").ok).toBe(false));
+  it("does not trust arbitrary new-provider subdomains", () => expect(validateWebsite("https://unknown.chatgpt.com").ok).toBe(false));
+  it("rejects embedded credentials", () => expect(validateWebsite("https://person:password@chatgpt.com").ok).toBe(false));
+  it("rejects nonstandard ports", () => expect(validateWebsite("https://chatgpt.com:8765").ok).toBe(false));
   it("accepts approved ids", () => expect(validateWebsite("youtube")).toEqual({ ok: true, url: "https://www.youtube.com" }));
   it("accepts subpages of approved hosts", () => expect(validateWebsite("https://github.com/x").ok).toBe(true));
   it("rejects unapproved hosts", () => expect(validateWebsite("https://evil.com").ok).toBe(false));
@@ -29,6 +37,7 @@ describe("safe calculator", () => {
 });
 
 describe("PC helper rules", () => {
+  it("launching apps always asks even at level 5", () => expect(needsConfirmation("launch_app", 5)).toBe(true));
   it("writing files always asks, even at level 5", () => expect(needsConfirmation("write_file", 5)).toBe(true));
   it("screenshots always ask", () => expect(needsConfirmation("take_screenshot", 5)).toBe(true));
   it("launching apps needs level 4", () => expect(isToolAllowed("launch_app", 3)).toBe(false));
@@ -59,6 +68,13 @@ describe("screen control and search", () => {
 import { GOOGLE_TOOLS as G } from "@/lib/jarvis/policy";
 import { describe as d2, it as i2, expect as e2 } from "vitest";
 d2("owner-only Google tools", () => {
+  i2("other users cannot inherit the owner's connections at level 5", () => {
+    e2(toolsForAccount(5, false)).not.toContain("search_email");
+    e2(toolsForAccount(5, false)).not.toContain("read_email");
+    e2(toolsForAccount(5, false)).not.toContain("list_events");
+    e2(toolsForAccount(5, false)).not.toContain("create_event");
+  });
+  i2("owner retains connected Google tools", () => e2(toolsForAccount(5, true)).toEqual(e2.arrayContaining(G)));
   i2("covers every Gmail and Calendar tool", () => {
     e2([...G].sort()).toEqual(["create_event", "list_events", "read_email", "search_email"]);
   });
