@@ -40,7 +40,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 HOST = "127.0.0.1"  # never 0.0.0.0
 PORT = 8765
 MAX_READ_BYTES = 200_000
@@ -54,7 +54,38 @@ APPS: dict[str, tuple[list[str], list[str]]] = {
     "notepad": (["notepad.exe"], ["notepad.exe", "Notepad.exe"]),
     "paint": (["mspaint.exe"], ["mspaint.exe", "Paint.exe"]),
     "explorer": (["explorer.exe", "{workspace}"], ["explorer.exe"]),
+    "edge": (["{installed}"], ["msedge.exe"]),
+    "chrome": (["{installed}"], ["chrome.exe"]),
+    "firefox": (["{installed}"], ["firefox.exe"]),
+    "spotify": (["{installed}"], ["Spotify.exe"]),
+    "discord": (["{installed}"], ["Discord.exe"]),
+    "steam": (["{installed}"], ["steam.exe"]),
 }
+
+# Only these known installation locations can be launched. No caller-supplied paths.
+INSTALL_PATHS = {
+    "edge": [("ProgramFiles(x86)", "Microsoft/Edge/Application/msedge.exe"), ("ProgramFiles", "Microsoft/Edge/Application/msedge.exe")],
+    "chrome": [("ProgramFiles", "Google/Chrome/Application/chrome.exe"), ("ProgramFiles(x86)", "Google/Chrome/Application/chrome.exe"), ("LOCALAPPDATA", "Google/Chrome/Application/chrome.exe")],
+    "firefox": [("ProgramFiles", "Mozilla Firefox/firefox.exe"), ("ProgramFiles(x86)", "Mozilla Firefox/firefox.exe")],
+    "spotify": [("APPDATA", "Spotify/Spotify.exe")],
+    "steam": [("ProgramFiles(x86)", "Steam/steam.exe"), ("ProgramFiles", "Steam/steam.exe")],
+    "discord": [("LOCALAPPDATA", "Discord")],
+}
+
+
+def installed_executable(app: str) -> Path:
+    for variable, relative in INSTALL_PATHS.get(app, []):
+        base = os.environ.get(variable)
+        if not base:
+            continue
+        candidate = Path(base) / relative
+        candidates = sorted(candidate.glob("app-*/Discord.exe"), reverse=True) if app == "discord" else [candidate]
+        root = Path(base).resolve()
+        for path in candidates:
+            resolved = path.resolve()
+            if path.is_file() and root in resolved.parents and resolved.suffix.lower() == ".exe":
+                return resolved
+    raise PolicyError(f"{app} is not installed in a supported location. No app was launched.")
 
 # Apps whose windows JARVIS may click/type into (must be in the foreground).
 SCREEN_APPS = ("calculator", "notepad", "paint")
@@ -220,9 +251,9 @@ class Helper:
         if app not in APPS:
             raise PolicyError(f"'{app}' is not an approved app. Approved: {', '.join(APPS)}.")
         cmd, procs = APPS[app]
-        cmd = [c.replace("{workspace}", str(self.workspace)) for c in cmd]
         if sys.platform != "win32":
             raise PolicyError("Launching apps only works on Windows.")
+        cmd = [str(installed_executable(app))] if app in INSTALL_PATHS else [c.replace("{workspace}", str(self.workspace)) for c in cmd]
         subprocess.Popen(cmd, shell=False, close_fds=True)  # no shell: no command injection
         running = False
         for _ in range(10):  # verify for up to ~3 seconds

@@ -14,7 +14,7 @@ import {
   PERMISSION_LEVELS,
   safeCalculate,
   toolsForLevel,
-  GOOGLE_TOOLS,
+  toolsForAccount,
   type PermissionLevel,
 } from "./policy";
 import { listEvents, readEmail, searchEmail } from "./google.server";
@@ -146,7 +146,8 @@ function systemPrompt(level: PermissionLevel, memories: { id: string; content: s
     `Current permission level: ${level} (${PERMISSION_LEVELS[level].name}). Tools available: ${toolsForLevel(level).join(", ") || "none"}.`,
     "Rules: Never claim an action succeeded unless a tool result says ok:true. If a tool is denied or fails, say so plainly.",
     "PC tools run through a local helper on the user's Windows PC; if a PC tool says the helper is not connected, tell the user to start it and pair it in the PC tab.",
-    "Google Calendar and Gmail are connected. Use the current date/time tool for relative dates. The user's default time zone is Asia/Kathmandu.",
+    "Use the current date/time tool for relative dates. The user's default time zone is Asia/Kathmandu.",
+    "Opening a service website does not connect its account or grant API access. Never claim to operate ChatGPT, Claude, Meta, social accounts or games without an available action tool. Game destinations are official web pages only; mobile gameplay control is not supported. Never bypass anti-cheat or platform protections.",
     "Use web_search for current events or facts that may have changed, and cite its sources. If you are unsure or lack a capability, say so honestly.",
     "Screen control: take_screenshot, then screen_click/screen_type with its screen_token; re-screenshot to verify the result before claiming success.",
     "Slack is not connected; Slack drafts are only copied to the clipboard.",
@@ -172,7 +173,7 @@ export async function handleChat(request: Request) {
 
   // Server-side enforcement: the model is only ever shown tools its level allows.
   // Gmail/Calendar belong to the owner's connected account: never offer them to anyone else.
-  const allowed = toolsForLevel(level as PermissionLevel).filter((t) => caller.isOwner || !GOOGLE_TOOLS.includes(t));
+  const allowed = toolsForAccount(level as PermissionLevel, caller.isOwner);
 
   const runIdFetch = createLovableAiGatewayRunIdFetch(getLovableAiGatewayRunId(request));
   const provider = createOpenAI({
