@@ -45,6 +45,7 @@ export function AuthScreen() {
       <div className="hud-panel w-full max-w-sm space-y-5 p-6">
         <div className="text-center">
           <h1 className="font-mono text-3xl tracking-[0.3em] text-primary">JARVIS</h1>
+          <p className="mt-2 text-xs text-muted-foreground">Developed by Aayush Acharya</p>
           <p className="mt-2 text-sm text-muted-foreground">Your own private assistant. Your memories and activity stay in your account only.</p>
         </div>
 
