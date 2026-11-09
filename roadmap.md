@@ -4,7 +4,8 @@
 - [ ] Set up individual-user service connections (blocked: no workspace OAuth clients configured for Gmail, Calendar or Slack; broader services require their own supported authorization).
 - [x] Validate before publication: 52 app tests and 25 helper tests passed; signed-in browser opening, approval, log readback and level-1 rejection checked; latest build OK. Non-owner Google exclusion tested in policy, not through a second real account.
 - [ ] Universal mobile app/game control (blocked: current Android wrapper has no device-control capability; real phone/Windows tests require those devices). No anti-cheat or platform restriction bypass.
-- [ ] Publication held until individual-account connections and real-device checks are complete.
+- [ ] Publish current JARVIS at the user's explicit request; individual-account connections and real-device checks remain limitations, not completed features.
+- [ ] Walk through signed-in chat, voice handling and a real destination after publication.
 - [x] Rebuild and deliver the Windows ZIP pointing to https://jarvis-bsg.lovable.app; ZIP integrity and packaged address verified (real Windows execution untested).
 - [ ] Connect Slack (blocked: user declined the Slack connection card).
 - [x] Add live web search with sources.
