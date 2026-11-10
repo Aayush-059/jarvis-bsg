@@ -1,4 +1,5 @@
 # JARVIS additions
+- [ ] Android commands inside installed apps: start with opening YouTube and preparing a confirmed comment on a specified channel's latest video. Blocked on choosing account-authorized service actions versus phone screen control; universal app/game support cannot be guaranteed and needs real-device verification.
 - [x] Expand popular website/service/game destinations: 55 official destinations, searchable Services tab, permission checks and confirmation.
 - [x] Expand installed Windows launch support: Edge, Chrome, Firefox, Spotify, Discord and Steam via fixed installation paths; screen control remains Calculator/Notepad/Paint only. Real Windows execution untested.
 - [ ] Set up individual-user service connections (blocked: no workspace OAuth clients configured for Gmail, Calendar or Slack; broader services require their own supported authorization).
