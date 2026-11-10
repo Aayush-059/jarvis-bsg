@@ -32,7 +32,11 @@ export type ToolName =
   | "read_email"
   | "web_search"
   | "screen_click"
-  | "screen_type";
+  | "screen_type"
+  | "android_open_app"
+  | "android_read_screen"
+  | "android_click"
+  | "android_type";
 
 /** Minimum permission level required to even offer a tool to the model. */
 export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
@@ -56,6 +60,10 @@ export const TOOL_MIN_LEVEL: Record<ToolName, PermissionLevel> = {
   web_search: 2,
   screen_click: 4,
   screen_type: 4,
+  android_open_app: 4,
+  android_read_screen: 4,
+  android_click: 4,
+  android_type: 4,
 };
 
 /** Tools executed by the Windows helper on the user's PC. */
@@ -66,6 +74,7 @@ export const APPROVED_APPS = ["calculator", "notepad", "paint", "explorer", "edg
 
 /** Tools that are always confirmed by the user, at any level. */
 const ALWAYS_CONFIRM: ToolName[] = ["delete_memory", "draft_message", "create_event", "launch_app", "write_file", "restore_file", "take_screenshot", "screen_click", "screen_type"];
+export const ANDROID_TOOLS: ToolName[] = ["android_open_app", "android_read_screen", "android_click", "android_type"];
 
 /** Validates screen-typing text: bounded, printable, no control keys (helper re-checks). */
 export function validateScreenText(t: string): { ok: true } | { ok: false; reason: string } {
@@ -83,7 +92,7 @@ export function isToolAllowed(tool: string, level: PermissionLevel): tool is Too
 }
 
 export function needsConfirmation(tool: ToolName, level: PermissionLevel): boolean {
-  if (ALWAYS_CONFIRM.includes(tool)) return true;
+  if (ALWAYS_CONFIRM.includes(tool) || ANDROID_TOOLS.includes(tool)) return true;
   if (tool === "open_website" || tool === "launch_app") return level < 5;
   return false;
 }
