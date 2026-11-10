@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="phone_accessibility_description">Optional YouTube screen access for JARVIS. Accessible screen text is shared with your JARVIS AI only when you approve a read. Each click or text entry asks again. Password fields and other apps are blocked. Stop disables the current session. This does not grant access to every app or account.</string>
+</resources>
