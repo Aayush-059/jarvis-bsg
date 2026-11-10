@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   APPROVED_APPS,
+  ANDROID_TOOLS,
   APPROVED_SITES,
   MAX_TOOL_ROUNDTRIPS,
   PC_TOOLS,
@@ -31,6 +32,8 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { AuthScreen } from "@/components/AuthScreen";
 import { ServiceDirectory } from "@/components/ServiceDirectory";
+import { AndroidControls, type AndroidApp } from "@/components/AndroidControls";
+import { callAndroid, connectAndroid } from "@/lib/jarvis/android-client";
 
 async function authHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
@@ -64,8 +67,8 @@ export const Route = createFileRoute("/")({
   component: JarvisGate,
 });
 
-const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message", ...PC_TOOLS];
-type ToolInput = { target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; summary?: string; start?: string; end?: string; description?: string; timeZone?: string; app?: string; path?: string; query?: string; reason?: string; x?: number; y?: number; text?: string; screen_token?: string };
+const CLIENT_TOOLS: ToolName[] = ["save_memory", "delete_memory", "open_website", "draft_message", ...PC_TOOLS, ...ANDROID_TOOLS];
+type ToolInput = { package_name?: string; node_id?: number; target?: string; content?: string; category?: string; id?: string; channel?: string; to?: string; subject?: string; body?: string; summary?: string; start?: string; end?: string; description?: string; timeZone?: string; app?: string; path?: string; query?: string; reason?: string; x?: number; y?: number; text?: string; screen_token?: string };
 type Pending = { toolCallId: string; tool: ToolName; input: ToolInput; diff?: string };
 type Phase = "IDLE" | "LISTENING" | "PROCESSING" | "AWAITING APPROVAL" | "SPEAKING";
 
@@ -75,6 +78,9 @@ function textOf(m: UIMessage) {
 
 function Jarvis({ userId, email }: { userId: string; email?: string | undefined }) {
   const store = useJarvisStore(userId);
+  const androidApps = useRef<AndroidApp[]>([]);
+  useEffect(() => connectAndroid(), []);
+  useEffect(() => () => { void callAndroid("stop"); androidApps.current = []; }, []);
   const storeRef = useRef(store);
   storeRef.current = store;
   const [input, setInput] = useState("");
@@ -96,6 +102,7 @@ function Jarvis({ userId, email }: { userId: string; email?: string | undefined 
         level: storeRef.current.level,
         memories: storeRef.current.memories.map((m) => ({ id: m.id, content: m.content })),
         summary: storeRef.current.summary || undefined,
+        androidApps: androidApps.current,
       }),
     }),
     sendAutomaticallyWhen: (o) => {
@@ -211,6 +218,14 @@ function Jarvis({ userId, email }: { userId: string; email?: string | undefined 
 
   function execute(p: Pending) {
     const s = storeRef.current;
+    if (halted.current || !isToolAllowed(p.tool, s.level)) return output(p, { ok: false, reason: "Action stopped or permission changed." }, "rejected", "Permission recheck rejected action");
+    if (ANDROID_TOOLS.includes(p.tool)) {
+      if (p.tool === "android_open_app" && !androidApps.current.some(a => a.package_name === p.input.package_name)) return output(p, { ok: false, reason: "Select this app on the Android device first." }, "rejected", "Unapproved Android app");
+      return void callAndroid(p.tool, p.input).then(r => {
+        if (halted.current) return;
+        output(p, r, r.ok ? "executed" : "failed", r.ok ? `${p.tool}: device result received` : r.reason ?? "Android result unverified");
+      });
+    }
     if (PC_TOOLS.includes(p.tool)) return void runPc(p);
     if (p.tool === "create_event" || (p.tool === "draft_message" && p.input.channel === "email")) return void runGoogle(p);
     switch (p.tool) {
@@ -258,6 +273,7 @@ function Jarvis({ userId, email }: { userId: string; email?: string | undefined 
 
   function emergencyStop() {
     halted.current = true;
+    void callAndroid("stop");
     stop();
     voice.silence();
     voice.stop();
@@ -445,8 +461,9 @@ function Jarvis({ userId, email }: { userId: string; email?: string | undefined 
           <TabsContent value="permissions" className="space-y-2 overflow-y-auto">
             <div className="flex items-center justify-between gap-2 rounded-md border border-border p-2 text-sm">
               <span className="truncate text-muted-foreground">Signed in as {email ?? "you"}</span>
-              <Button size="sm" variant="ghost" onClick={() => { stop(); supabase.auth.signOut(); }}>Sign out</Button>
+              <Button size="sm" variant="ghost" onClick={() => { emergencyStop(); supabase.auth.signOut(); }}>Sign out</Button>
             </div>
+            <AndroidControls onApps={apps => { androidApps.current = apps; }} onLog={detail => store.log({ tool: "ANDROID_APPS", input: {}, status: "executed", detail })} />
             {([1, 2, 3, 4, 5] as PermissionLevel[]).map((l) => (
               <button
                 key={l}
